@@ -1,0 +1,35 @@
+{# ============================================================================
+ # Bundle component row
+ # A single product + quantity row in the bundle editor's component picker.
+ # Shared by the edit form (server-rendered) and the AJAX "add" endpoint.
+ # ========================================================================== #}
+{% import '_includes/forms' as forms %}
+
+{% set product = bundleProduct.product ?? null %}
+
+<div class="bundle-product-row" data-index="{{ index }}">
+    <div class="bundle-product-cell bundle-product-cell--product">
+        {{ forms.elementSelect({
+            name: 'products[' ~ index ~ '][productId]',
+            elementType: 'craft\\commerce\\elements\\Product',
+            sources: '*',
+            limit: 1,
+            elements: product ? [product] : [],
+        }) }}
+    </div>
+    <div class="bundle-product-cell bundle-product-cell--qty">
+        {{ forms.text({
+            name: 'products[' ~ index ~ '][qty]',
+            value: bundleProduct.qty ?? 1,
+            type: 'number',
+            min: 1,
+            size: 4,
+            inputAttributes: {
+                aria: { label: 'Quantity'|t('bundle-builder') },
+            },
+        }) }}
+    </div>
+    <div class="bundle-product-cell bundle-product-cell--delete">
+        <a class="delete icon bundle-product-remove" title="{{ 'Remove'|t('app') }}" role="button"></a>
+    </div>
+</div>

@@ -1,0 +1,35 @@
+{# ============================================================================
+ # Bundles index
+ # The native Craft element index for bundles, with a type-aware "New bundle"
+ # button.
+ # ========================================================================== #}
+{% extends '_layouts/elementindex' %}
+{% set selectedSubnavItem = 'bundles' %}
+{% set title = 'Bundles'|t('bundle-builder') %}
+{% set elementType = 'johnhenry\\bundlebuilder\\elements\\Bundle' %}
+
+{% block actionButton %}
+    {% if bundleTypes|length == 1 %}
+        <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
+            {{ 'New bundle'|t('bundle-builder') }}
+        </a>
+    {% elseif bundleTypes|length > 1 %}
+        <div class="btngroup submit">
+            <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
+                {{ 'New bundle'|t('bundle-builder') }}
+            </a>
+            <div class="btn submit menubtn"></div>
+            <div class="menu">
+                <ul>
+                    {% for bundleType in bundleTypes %}
+                        <li>
+                            <a href="{{ url('bundle-builder/bundles/new', { typeId: bundleType.id }) }}">
+                                {{ bundleType.name }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    {% endif %}
+{% endblock %}

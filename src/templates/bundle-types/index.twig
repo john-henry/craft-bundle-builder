@@ -1,0 +1,57 @@
+{# ============================================================================
+ # Bundle types index
+ # Lists every bundle type with links to edit, and a button to create new ones.
+ # ========================================================================== #}
+{% extends '_layouts/cp' %}
+{% set selectedSubnavItem = 'bundle-types' %}
+{% set title = 'Bundle Types'|t('bundle-builder') %}
+
+{% set crumbs = [
+    { label: 'Bundles'|t('bundle-builder'), url: url('bundle-builder/bundles') },
+] %}
+
+{% block actionButton %}
+    <a href="{{ url('bundle-builder/bundle-types/new') }}" class="btn submit add icon">
+        {{ 'New bundle type'|t('bundle-builder') }}
+    </a>
+{% endblock %}
+
+{% block content %}
+    {% if bundleTypes|length %}
+        <table id="bundle-types" class="data fullwidth collapsible">
+            <thead>
+                <tr>
+                    <th scope="col">{{ 'Name'|t('bundle-builder') }}</th>
+                    <th scope="col">{{ 'Handle'|t('bundle-builder') }}</th>
+                    <td class="thin"></td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bundleType in bundleTypes %}
+                    <tr data-id="{{ bundleType.id }}" data-name="{{ bundleType.name }}">
+                        <th scope="row" data-title="{{ 'Name'|t('bundle-builder') }}">
+                            <a href="{{ bundleType.getCpEditUrl() }}">{{ bundleType.name }}</a>
+                        </th>
+                        <td data-title="{{ 'Handle'|t('bundle-builder') }}">
+                            <code>{{ bundleType.handle }}</code>
+                        </td>
+                        <td class="thin">
+                            <a class="delete icon" title="{{ 'Delete'|t('app') }}" role="button"></a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>{{ 'No bundle types exist yet.'|t('bundle-builder') }}</p>
+    {% endif %}
+{% endblock %}
+
+{% js %}
+    new Craft.AdminTable({
+        tableSelector: '#bundle-types',
+        noObjectsSelector: '#nobundletypes',
+        deleteAction: 'bundle-builder/bundle-types/delete',
+        confirmDeleteMessage: '{{ 'Are you sure you want to delete “{name}” and all of its bundles?'|t('bundle-builder') }}',
+    });
+{% endjs %}

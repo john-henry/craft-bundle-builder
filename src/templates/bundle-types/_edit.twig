@@ -1,0 +1,201 @@
+{# ============================================================================
+ # Bundle type edit screen
+ # Settings (name, handle, formats, per-site URL settings) plus the shared field
+ # layout designer for bundles of this type.
+ # ========================================================================== #}
+{% extends '_layouts/cp' %}
+{% set selectedSubnavItem = 'bundle-types' %}
+{% import '_includes/forms' as forms %}
+
+{% set crumbs = [
+    { label: 'Bundles'|t('bundle-builder'), url: url('bundle-builder/bundles') },
+    { label: 'Bundle Types'|t('bundle-builder'), url: url('bundle-builder/bundle-types') },
+] %}
+
+{% set fullPageForm = true %}
+{% set selectedTab = 'settings' %}
+
+{% set tabs = {
+    settings: { label: 'Settings'|t('bundle-builder'), url: '#settings' },
+    fieldLayout: { label: 'Field Layout'|t('bundle-builder'), url: '#fieldLayout' },
+} %}
+
+{% block content %}
+    <input type="hidden" name="action" value="bundle-builder/bundle-types/save">
+    {{ redirectInput('bundle-builder/bundle-types') }}
+    {% if bundleType.id %}<input type="hidden" name="id" value="{{ bundleType.id }}">{% endif %}
+
+    <div id="settings">
+        {{ forms.textField({
+            first: true,
+            label: 'Name'|t('bundle-builder'),
+            instructions: 'What this bundle type will be called in the control panel.'|t('bundle-builder'),
+            id: 'name',
+            name: 'name',
+            value: bundleType.name,
+            errors: bundleType.getErrors('name'),
+            autofocus: true,
+            required: true,
+        }) }}
+
+        {{ forms.textField({
+            label: 'Handle'|t('bundle-builder'),
+            instructions: 'How you’ll refer to this bundle type in templates.'|t('bundle-builder'),
+            id: 'handle',
+            class: 'code',
+            name: 'handle',
+            value: bundleType.handle,
+            errors: bundleType.getErrors('handle'),
+            required: true,
+        }) }}
+
+        {{ forms.textField({
+            label: 'Automatic SKU Format'|t('bundle-builder'),
+            instructions: 'Optional. Used to generate a bundle’s SKU if left blank. Accepts the same object template tags as products (e.g. `{slug}`).'|t('bundle-builder'),
+            id: 'skuFormat',
+            class: 'code',
+            name: 'skuFormat',
+            value: bundleType.skuFormat ?? '{slug}',
+            errors: bundleType.getErrors('skuFormat'),
+        }) }}
+
+        {{ forms.textField({
+            label: 'Automatic Description Format'|t('bundle-builder'),
+            instructions: 'Optional. Used as the line-item description if set. Defaults to the bundle’s title.'|t('bundle-builder'),
+            id: 'descriptionFormat',
+            class: 'code',
+            name: 'descriptionFormat',
+            value: bundleType.descriptionFormat,
+            errors: bundleType.getErrors('descriptionFormat'),
+        }) }}
+
+        {{ forms.lightswitchField({
+            label: 'Show the Slug field'|t('bundle-builder'),
+            instructions: 'Whether the slug field is shown when editing bundles of this type.'|t('bundle-builder'),
+            id: 'showSlugField',
+            name: 'showSlugField',
+            on: bundleType.showSlugField,
+        }) }}
+
+        {{ forms.selectField({
+            label: 'VAT / Tax treatment'|t('bundle-builder'),
+            instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category — use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category — use for independent items sold together (e.g. a bag + a collection service at different VAT rates).'|t('bundle-builder'),
+            id: 'taxTreatment',
+            name: 'taxTreatment',
+            value: bundleType.taxTreatment,
+            options: [
+                { value: 'composite', label: 'Composite supply (single rate)'|t('bundle-builder') },
+                { value: 'multiple', label: 'Multiple supply (apportion VAT per component)'|t('bundle-builder') },
+            ],
+        }) }}
+
+        <hr>
+
+        {% set brandNewBundleType = (bundleType.id is null) %}
+        {% set siteRows = [] %}
+        {% set siteErrors = bundleType.getErrors('siteSettings') %}
+
+        {% for site in craft.app.sites.getAllSites() %}
+            {% set siteSettings = bundleType.getSiteSettings()[site.id] ?? null %}
+            {% set siteRows = siteRows|merge({
+                (site.handle): {
+                    heading: site.name|t('site')|e,
+                    enabled: include('_includes/forms/lightswitch.twig', {
+                        name: 'sites[' ~ site.handle ~ '][enabled]',
+                        on: brandNewBundleType or siteSettings,
+                        value: site.id,
+                        small: true,
+                    }),
+                    uriFormat: {
+                        value: siteSettings ? siteSettings.uriFormat,
+                        hasErrors: (siteSettings ? siteSettings.hasErrors('uriFormat')),
+                    },
+                    template: {
+                        value: siteSettings ? siteSettings.template,
+                        hasErrors: siteSettings ? siteSettings.hasErrors('template'),
+                    },
+                    enabledByDefault: siteSettings ? siteSettings.enabledByDefault : true,
+                },
+            }) %}
+        {% endfor %}
+
+        {{ forms.editableTableField({
+            label: 'Site Settings'|t('app'),
+            instructions: 'Choose which sites this bundle type should be available in, and configure the site-specific settings.'|t('bundle-builder'),
+            id: 'sites',
+            name: 'sites',
+            cols: {
+                heading: {
+                    type: 'heading',
+                    heading: 'Site'|t('app'),
+                    thin: true,
+                },
+                enabled: {
+                    type: 'heading',
+                    thin: true,
+                    class: not craft.app.getIsMultiSite() ? 'hidden',
+                },
+                uriFormat: {
+                    type: 'singleline',
+                    heading: 'Bundle URI Format'|t('bundle-builder'),
+                    info: 'What bundle URIs should look like for the site.'|t('bundle-builder'),
+                    placeholder: 'Leave blank if bundles don’t have URLs'|t('bundle-builder'),
+                    code: true,
+                },
+                template: {
+                    type: 'template',
+                    heading: 'Template'|t('app'),
+                    info: 'Which template should be loaded when a bundle’s URL is requested.'|t('bundle-builder'),
+                    code: true,
+                },
+                enabledByDefault: {
+                    type: 'lightswitch',
+                    heading: 'Default Status'|t('app'),
+                    thin: true,
+                },
+            }|filter,
+            rows: siteRows,
+            fullWidth: true,
+            allowAdd: false,
+            allowDelete: false,
+            allowReorder: false,
+            errors: siteErrors|unique,
+        }) }}
+
+        {{ forms.editableTableField({
+            label: 'Preview Targets'|t('app'),
+            instructions: 'Locations that should be available for previewing bundles of this type. Use `{url}` for the bundle’s own URL.'|t('bundle-builder'),
+            id: 'previewTargets',
+            name: 'previewTargets',
+            cols: {
+                label: {
+                    type: 'singleline',
+                    heading: 'Label'|t('app'),
+                },
+                urlFormat: {
+                    type: 'singleline',
+                    heading: 'URL Format'|t('app'),
+                    info: 'What the preview URL should look like. Defaults to the bundle’s own URL.'|t('bundle-builder'),
+                    code: true,
+                },
+            },
+            rows: bundleType.previewTargets ?: [{ label: 'Primary bundle page'|t('bundle-builder'), urlFormat: '{url}' }],
+            allowAdd: true,
+            allowDelete: true,
+            allowReorder: true,
+            addRowLabel: 'Add a preview target'|t('bundle-builder'),
+        }) }}
+    </div>
+
+    <div id="fieldLayout" class="hidden">
+        {{ forms.fieldLayoutDesignerField({
+            fieldLayout: bundleType.getBundleFieldLayout(),
+        }) }}
+    </div>
+{% endblock %}
+
+{% if not bundleType.handle %}
+    {% js %}
+        new Craft.HandleGenerator('#name', '#handle');
+    {% endjs %}
+{% endif %}
