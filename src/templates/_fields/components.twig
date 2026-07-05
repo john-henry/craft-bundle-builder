@@ -6,24 +6,27 @@
  # ========================================================================== #}
 
 {% css %}
-    .bundle-products { max-width: 640px; }
     .bundle-product-header,
-    .bundle-product-row { display: flex; align-items: flex-start; gap: 12px; }
+    .bundle-product-row { display: flex; align-items: center; gap: 12px; }
     .bundle-product-header {
-        font-weight: 600; color: #606d7b; font-size: 11px; text-transform: uppercase;
-        letter-spacing: 0.5px; padding-bottom: 6px; border-bottom: 1px solid #cdd8e4;
+        font-weight: 600; color: var(--medium-text-color); font-size: 11px; text-transform: uppercase;
+        letter-spacing: 0.5px; padding-bottom: 6px; border-bottom: 1px solid var(--hairline-color);
     }
-    .bundle-product-row { padding: 10px 0; border-bottom: 1px solid #eceef2; }
+    .bundle-product-row { padding: 10px 0; border-bottom: 1px solid var(--hairline-color); }
+    .bundle-product-row:last-child { border-bottom: none; }
+    .bundle-product-row.draghelper { background: var(--white); border: 1px solid var(--hairline-color); border-radius: var(--medium-border-radius); padding: 10px 12px; }
+    .bundle-product-cell--handle { flex: 0 0 20px; text-align: center; cursor: move; }
     .bundle-product-cell--product { flex: 1 1 auto; min-width: 0; }
     .bundle-product-cell--product .elementselect { width: 100%; }
     .bundle-product-cell--qty { flex: 0 0 80px; }
     .bundle-product-cell--qty input { width: 100%; }
-    .bundle-product-cell--delete { flex: 0 0 20px; padding-top: 6px; text-align: center; }
+    .bundle-product-cell--delete { flex: 0 0 20px; text-align: center; }
     .bundle-products .btn.add { margin-top: 12px; }
 {% endcss %}
 
 <div id="bundle-products" class="bundle-products">
     <div class="bundle-product-header">
+        <div class="bundle-product-cell bundle-product-cell--handle"></div>
         <div class="bundle-product-cell bundle-product-cell--product">{{ 'Product'|t('bundle-builder') }}</div>
         <div class="bundle-product-cell bundle-product-cell--qty">{{ 'Qty'|t('bundle-builder') }}</div>
         <div class="bundle-product-cell bundle-product-cell--delete"></div>
@@ -45,15 +48,27 @@
         var rows = document.querySelector('#bundle-products .bundle-product-rows');
         var addBtn = document.getElementById('add-bundle-product');
 
+        if (rows) {
+            var dragSort = new Garnish.DragSort($(rows).children('.bundle-product-row'), {
+                handle: '.move.icon',
+                axis: Garnish.Y_AXIS,
+                container: rows,
+            });
+        }
+
         if (addBtn && rows) {
             addBtn.addEventListener('click', function() {
                 Craft.sendActionRequest('POST', 'bundle-builder/bundles/product-row', { data: { index: index } })
                     .then(function(response) {
                         var tmp = document.createElement('div');
                         tmp.innerHTML = response.data.html.trim();
-                        rows.appendChild(tmp.firstElementChild);
+                        var newRow = tmp.firstElementChild;
+                        rows.appendChild(newRow);
                         Craft.appendHeadHtml(response.data.headHtml);
                         Craft.appendBodyHtml(response.data.bodyHtml);
+                        if (dragSort) {
+                            dragSort.addItems($(newRow));
+                        }
                         index++;
                     });
             });
@@ -62,6 +77,9 @@
                 if (e.target.classList.contains('bundle-product-remove')) {
                     var row = e.target.closest('.bundle-product-row');
                     if (row) {
+                        if (dragSort) {
+                            dragSort.removeItems($(row));
+                        }
                         row.parentNode.removeChild(row);
                     }
                 }

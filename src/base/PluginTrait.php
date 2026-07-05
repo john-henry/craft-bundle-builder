@@ -14,7 +14,6 @@ use craft\commerce\fieldlayoutelements\PurchasablePromotableField;
 use craft\commerce\fieldlayoutelements\PurchasableSkuField;
 use craft\commerce\services\OrderAdjustments;
 use craft\events\DefineFieldLayoutFieldsEvent;
-use craft\events\ModelEvent;
 use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
@@ -30,6 +29,8 @@ use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\fieldlayoutelements\BundleComponentsField;
 use johnhenry\bundlebuilder\fieldlayoutelements\BundlePricingField;
 use johnhenry\bundlebuilder\fields\Bundles as BundlesField;
+use johnhenry\bundlebuilder\jobs\RecalculateBundlePrices;
+use johnhenry\bundlebuilder\records\BundleProductRecord;
 use johnhenry\bundlebuilder\variables\BundleBuilderVariable;
 use yii\base\Event;
 
@@ -205,7 +206,11 @@ trait PluginTrait
 
     /**
      * Recalculates automatically priced bundles whenever a component product is
-     * saved, so their stored price tracks component price changes.
+     * saved, deleted or restored, so their stored price tracks component price
+     * changes and a deleted component stops contributing to the subtotal. Only
+     * queues when the product is actually used in a bundle, and at most once per
+     * product per request. Queued rather than run synchronously; see
+     * {@see RecalculateBundlePrices}.
      *
      * @return void
      * @author JohnHenry <info@johnhenry.ie>
@@ -213,24 +218,42 @@ trait PluginTrait
      */
     private function _registerPricingRecalculation(): void
     {
-        Event::on(
-            Product::class,
-            Product::EVENT_AFTER_SAVE,
-            function(ModelEvent $event) {
-                /** @var Product $product */
-                $product = $event->sender;
+        // EVENT_AFTER_SAVE fires with a ModelEvent; EVENT_AFTER_DELETE and
+        // EVENT_AFTER_RESTORE fire with a plain yii\base\Event; type-hint the
+        // common ancestor so the same handler can be used for all three.
+        $queueRecalculation = static function(Event $event): void {
+            // One job per product per request: a bulk edit that resaves the same
+            // component a few times shouldn't queue the same recalculation twice.
+            static $queued = [];
 
-                if (!$product->id || $product->getIsDraft() || $product->getIsRevision() || $product->propagating) {
-                    return;
-                }
+            /** @var Product $product */
+            $product = $event->sender;
 
-                $this->getBundlePricing()->recalculateBundlesForProduct($product->id);
+            if (!$product->id || $product->getIsDraft() || $product->getIsRevision() || $product->propagating) {
+                return;
             }
-        );
+
+            if (isset($queued[$product->id])) {
+                return;
+            }
+
+            // Only bother when the product is actually a component of a bundle,
+            // so saving any other product doesn't queue a job that does nothing.
+            if (!BundleProductRecord::find()->where(['productId' => $product->id])->exists()) {
+                return;
+            }
+
+            $queued[$product->id] = true;
+            Craft::$app->getQueue()->push(new RecalculateBundlePrices(['productId' => $product->id]));
+        };
+
+        Event::on(Product::class, Product::EVENT_AFTER_SAVE, $queueRecalculation);
+        Event::on(Product::class, Product::EVENT_AFTER_DELETE, $queueRecalculation);
+        Event::on(Product::class, Product::EVENT_AFTER_RESTORE, $queueRecalculation);
     }
 
     /**
-     * Registers the bundle tax adjuster, which apportions VAT across the
+     * Registers the bundle tax adjuster, which apportions tax across the
      * components of multiple-supply bundles.
      *
      * @return void

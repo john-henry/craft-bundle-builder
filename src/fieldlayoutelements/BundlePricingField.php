@@ -65,12 +65,19 @@ class BundlePricingField extends BaseNativeField
         $currency = $element->getStore()->getCurrency();
         $currencyCode = $currency->getCode();
 
+        // The visible label is suppressed (blank) since this select sits directly
+        // under the field layout's own "Pricing" label; a second "Strategy"
+        // label right beneath it just reads as a duplicated heading. The
+        // accessible name is preserved via an explicit aria-label instead.
         $strategyHtml = Cp::selectFieldHtml([
-            'label' => Craft::t('bundle-builder', 'Pricing strategy'),
+            'label' => '__blank__',
             'id' => 'pricingStrategy',
             'name' => 'pricingStrategy',
             'value' => $element->pricingStrategy,
             'disabled' => $static,
+            'inputAttributes' => [
+                'aria' => ['label' => Craft::t('bundle-builder', 'Strategy')],
+            ],
             'options' => [
                 ['value' => PricingStrategy::Fixed->value, 'label' => Craft::t('bundle-builder', 'Fixed price')],
                 ['value' => PricingStrategy::Automatic->value, 'label' => Craft::t('bundle-builder', 'Automatic (sum of components − discount)')],

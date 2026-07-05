@@ -152,16 +152,14 @@ class BundleTypesController extends Controller
         $fieldLayoutBehavior->setFieldLayout($fieldLayout);
 
         if (!$service->saveBundleType($bundleType)) {
-            Craft::$app->getSession()->setError(Craft::t('bundle-builder', 'Couldn\'t save bundle type.'));
-
             return $this->asModelFailure(
                 $bundleType,
-                Craft::t('bundle-builder', 'Couldn\'t save bundle type.'),
+                Craft::t('bundle-builder', 'Couldn’t save bundle type.'),
                 'bundleType'
             );
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('bundle-builder', 'Bundle type saved.'));
+        $this->setSuccessFlash(Craft::t('bundle-builder', 'Bundle type saved.'));
 
         return $this->redirectToPostedUrl($bundleType);
     }

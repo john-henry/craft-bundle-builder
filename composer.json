@@ -2,7 +2,7 @@
   "name": "johnhenry/craft-bundle-builder",
   "description": "Product bundles for Craft Commerce - flexible pricing, cart-time variant selection, and child inventory tracking",
   "type": "craft-plugin",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0",
   "keywords": [
     "craft",
     "cms",
@@ -20,7 +20,7 @@
       "homepage": "https://johnhenry.ie"
     }
   ],
-  "homepage": "https://plugins.johnhenry.ie/bundle-builder",
+  "homepage": "https://johnhenry.ie/plugins/bundle-builder/",
   "require": {
     "php": "^8.2 || ^8.3 || ^8.4",
     "craftcms/cms": "^5.0",
@@ -52,7 +52,7 @@
     "sort-packages": true
   },
   "support": {
-    "docs": "https://plugins.johnhenry.ie/bundle-builder",
+    "docs": "https://johnhenry.ie/plugins/bundle-builder/",
     "source": "https://github.com/john-henry/craft-bundle-builder",
     "issues": "https://github.com/john-henry/craft-bundle-builder/issues"
   },
@@ -61,7 +61,7 @@
     "handle": "bundle-builder",
     "developer": "John Henry",
     "developerUrl": "https://johnhenry.ie",
-    "documentationUrl": "https://plugins.johnhenry.ie/bundle-builder/",
+    "documentationUrl": "https://johnhenry.ie/plugins/bundle-builder/",
     "changelogUrl": "https://github.com/john-henry/craft-bundle-builder/blob/craft-5/CHANGELOG.md",
     "class": "johnhenry\\bundlebuilder\\BundleBuilder"
   }

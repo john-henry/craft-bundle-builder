@@ -8,6 +8,9 @@
 {% set product = bundleProduct.product ?? null %}
 
 <div class="bundle-product-row" data-index="{{ index }}">
+    <div class="bundle-product-cell bundle-product-cell--handle">
+        <a class="move icon" title="{{ 'Reorder'|t('app') }}" aria-label="{{ 'Reorder'|t('app') }}" role="button"></a>
+    </div>
     <div class="bundle-product-cell bundle-product-cell--product">
         {{ forms.elementSelect({
             name: 'products[' ~ index ~ '][productId]',
@@ -30,6 +33,6 @@
         }) }}
     </div>
     <div class="bundle-product-cell bundle-product-cell--delete">
-        <a class="delete icon bundle-product-remove" title="{{ 'Remove'|t('app') }}" role="button"></a>
+        <a class="delete icon bundle-product-remove" title="{{ 'Remove'|t('app') }}" aria-label="{{ 'Remove'|t('app') }}" role="button"></a>
     </div>
 </div>

@@ -133,10 +133,20 @@ class BundleCart extends Component
                 continue;
             }
 
-            $inventory->updatePurchasableInventoryLevel($variant, -$needed, [
-                'updateAction' => InventoryUpdateQuantityType::ADJUST,
-                'note' => Craft::t('bundle-builder', 'Bundle order: {sku}', ['sku' => $lineItem->getSku()]),
-            ]);
+            // This runs after the order is already marked complete, so a failure
+            // on one component mustn't stop the rest from being decremented. Log
+            // it and carry on rather than let the whole order-complete throw.
+            try {
+                $inventory->updatePurchasableInventoryLevel($variant, -$needed, [
+                    'updateAction' => InventoryUpdateQuantityType::ADJUST,
+                    'note' => Craft::t('bundle-builder', 'Bundle order: {sku}', ['sku' => $lineItem->getSku()]),
+                ]);
+            } catch (\Throwable $e) {
+                Craft::error(
+                    "Couldn't decrement stock for bundle component variant {$variant->id} on order {$lineItem->getSku()}: {$e->getMessage()}",
+                    'bundle-builder',
+                );
+            }
         }
     }
 

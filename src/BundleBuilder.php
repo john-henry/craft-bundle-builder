@@ -18,7 +18,7 @@ use johnhenry\bundlebuilder\services\ServicesTrait;
  * purchasable element grouping several products together at either a fixed
  * price or an automatically discounted sum of its components. Customers pick a
  * variant per component at add-to-cart time, the chosen variants are frozen
- * onto the order, and the bundle draws its availability from — and decrements —
+ * onto the order, and the bundle draws its availability from, and decrements,
  * its component variants' inventory.
  *
  * @author JohnHenry <info@johnhenry.ie>

@@ -82,7 +82,7 @@ class Install extends Migration
     /**
      * Ensures a zero-rate "Bundle (apportioned)" tax category exists, used by
      * multiple-supply bundles so Commerce's core tax adjuster leaves their line
-     * untaxed while this plugin's adjuster applies apportioned VAT.
+     * untaxed while this plugin's adjuster applies apportioned tax.
      *
      * @return void
      * @throws Throwable if the tax category can't be saved.
@@ -106,10 +106,10 @@ class Install extends Migration
         $taxCategory = new TaxCategory([
             'name' => 'Bundle (apportioned)',
             'handle' => self::APPORTIONED_TAX_CATEGORY_HANDLE,
-            'description' => 'Zero-rate category for multiple-supply bundles; VAT is apportioned across components by Bundle Builder.',
+            'description' => 'Zero-rate category for multiple-supply bundles; tax is apportioned across components by Bundle Builder.',
         ]);
 
-        // Don't let a tax-category failure abort the whole install — the tables
+        // Don't let a tax-category failure abort the whole install; the tables
         // are already created and the category can be created later in the CP.
         try {
             $service->saveTaxCategory($taxCategory);

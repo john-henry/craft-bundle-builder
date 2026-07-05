@@ -27,6 +27,7 @@ use craft\validators\UniqueValidator;
 use DateTime;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\db\BundleQuery;
+use johnhenry\bundlebuilder\enums\DiscountType;
 use johnhenry\bundlebuilder\enums\PricingStrategy;
 use johnhenry\bundlebuilder\enums\TaxTreatment;
 use johnhenry\bundlebuilder\migrations\Install;
@@ -44,7 +45,7 @@ use yii\db\ActiveQuery;
  * automatically discounted sum of its components; the customer chooses a variant
  * per component when the bundle is added to the cart. SKU, base price,
  * tax/shipping category and free-shipping settings are stored natively by the
- * Commerce purchasable base class — only the bundle-specific configuration lives
+ * Commerce purchasable base class; only the bundle-specific configuration lives
  * in {{%bundlebuilder_bundles}}.
  *
  * @author JohnHenry <info@johnhenry.ie>
@@ -215,6 +216,22 @@ class Bundle extends Purchasable
     /**
      * @inheritdoc
      *
+     * A bundle never gets its own inventory item; stock is tracked and
+     * decremented against its component variants instead, so it must never
+     * appear on Commerce's Inventory index.
+     *
+     * @return bool Whether this purchasable type has inventory.
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    public static function hasInventory(): bool
+    {
+        return false;
+    }
+
+    /**
+     * @inheritdoc
+     *
      * @return BundleQuery The element query.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
@@ -238,7 +255,7 @@ class Bundle extends Purchasable
     {
         parent::init();
 
-        // A bundle never tracks its own inventory — availability is derived from,
+        // A bundle never tracks its own inventory; availability is derived from,
         // and stock is decremented against, its component variants.
         $this->inventoryTracked = false;
     }
@@ -550,7 +567,7 @@ class Bundle extends Purchasable
      * @inheritdoc
      *
      * Multiple-supply bundles use a zero-rate category so Commerce's core tax
-     * adjuster leaves the line untaxed; the plugin's adjuster then applies VAT
+     * adjuster leaves the line untaxed; the plugin's adjuster then applies tax
      * apportioned across the components.
      *
      * @return int The tax category ID.
@@ -907,7 +924,9 @@ class Bundle extends Purchasable
             ],
         ];
 
-        foreach (BundleBuilder::getInstance()->getBundleTypes()->getAllBundleTypes() as $bundleType) {
+        // Only list the types the user can actually manage, so a user scoped to
+        // one bundle type doesn't see the others' names in the sidebar.
+        foreach (BundleBuilder::getInstance()->getBundleTypes()->getEditableBundleTypes() as $bundleType) {
             $sources[] = [
                 'key' => 'bundleType:' . $bundleType->uid,
                 'label' => $bundleType->name,
@@ -975,7 +994,15 @@ class Bundle extends Purchasable
         $rules[] = [['typeId'], 'required'];
         $rules[] = [['typeId'], 'number', 'integerOnly' => true];
         $rules[] = [['pricingStrategy'], 'in', 'range' => [PricingStrategy::Fixed->value, PricingStrategy::Automatic->value]];
+        $rules[] = [['discountType'], 'in', 'range' => [DiscountType::Percentage->value, DiscountType::Flat->value], 'skipOnEmpty' => true];
         $rules[] = [['discountAmount'], 'number', 'min' => 0];
+        $rules[] = [
+            ['discountAmount'],
+            'number',
+            'max' => 100,
+            'when' => static fn(Bundle $model): bool => $model->discountType === DiscountType::Percentage->value,
+            'tooBig' => Craft::t('bundle-builder', 'A percentage discount can’t exceed 100%.'),
+        ];
         $rules[] = [['postDate', 'expiryDate'], DateTimeValidator::class];
 
         // Attributes assignable from the native element editor's posted form.

@@ -26,7 +26,7 @@ return [
     'Qty' => 'Qty',
     'Quantity' => 'Quantity',
 
-    // Bundle types — CP
+    // Bundle types (CP)
     // =========================================================================
     'New bundle type' => 'New bundle type',
     'Create a Bundle Type' => 'Create a Bundle Type',
@@ -62,32 +62,27 @@ return [
     'What the preview URL should look like. Defaults to the bundle’s own URL.' => 'What the preview URL should look like. Defaults to the bundle’s own URL.',
     'Primary bundle page' => 'Primary bundle page',
 
-    // VAT / tax treatment
+    // Tax treatment
     // =========================================================================
-    'VAT / Tax treatment' => 'VAT / Tax treatment',
-    'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category — use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category — use for independent items sold together (e.g. a bag + a collection service at different VAT rates).' => 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category — use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category — use for independent items sold together (e.g. a bag + a collection service at different VAT rates).',
+    'Tax treatment' => 'Tax treatment',
+    'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).' => 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).',
     'Composite supply (single rate)' => 'Composite supply (single rate)',
-    'Multiple supply (apportion VAT per component)' => 'Multiple supply (apportion VAT per component)',
+    'Multiple supply (apportion tax per component)' => 'Multiple supply (apportion tax per component)',
 
-    // Bundles — CP
+    // Bundles (CP)
     // =========================================================================
     'New bundle' => 'New bundle',
     'Add a product' => 'Add a product',
     'The products included in this bundle. Customers choose a variant for each at checkout.' => 'The products included in this bundle. Customers choose a variant for each at checkout.',
-    'Bundle saved.' => 'Bundle saved.',
     'Bundle created.' => 'Bundle created.',
-    'Bundle not found.' => 'Bundle not found.',
     'Couldn’t create bundle.' => 'Couldn’t create bundle.',
-    'No editable bundle types exist.' => 'No editable bundle types exist.',
-    'This bundle type has no front-end template.' => 'This bundle type has no front-end template.',
-    'You don’t have permission to edit this bundle.' => 'You don’t have permission to edit this bundle.',
-    'You don’t have permission to save this bundle.' => 'You don’t have permission to save this bundle.',
-    'You don’t have permission to delete this bundle.' => 'You don’t have permission to delete this bundle.',
+    'User not authorized to manage bundles of any type.' => 'User not authorized to manage bundles of any type.',
+    'No editable bundle type exists.' => 'No editable bundle type exists.',
 
     // Pricing
     // =========================================================================
     'Pricing' => 'Pricing',
-    'Pricing strategy' => 'Pricing strategy',
+    'Strategy' => 'Strategy',
     'Fixed price' => 'Fixed price',
     'Automatic (sum of components − discount)' => 'Automatic (sum of components − discount)',
     'Bundle price' => 'Bundle price',
@@ -97,6 +92,7 @@ return [
     'Percentage off' => 'Percentage off',
     'Flat amount off' => 'Flat amount off',
     'For percentage, enter e.g. 10 for 10%.' => 'For percentage, enter e.g. 10 for 10%.',
+    'A percentage discount can’t exceed 100%.' => 'A percentage discount can’t exceed 100%.',
 
     // Permissions
     // =========================================================================
@@ -106,4 +102,8 @@ return [
     // =========================================================================
     '“{product}” isn’t available in the requested quantity.' => '“{product}” isn’t available in the requested quantity.',
     'Bundle order: {sku}' => 'Bundle order: {sku}',
+
+    // Jobs
+    // =========================================================================
+    'Recalculating bundle prices' => 'Recalculating bundle prices',
 ];

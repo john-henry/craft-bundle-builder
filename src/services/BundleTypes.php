@@ -169,10 +169,8 @@ class BundleTypes extends Component
      */
     public function saveBundleType(BundleType $bundleType, bool $runValidation = true): bool
     {
-        // Bundle types are stored in the database rather than project config (the
-        // field layout is the only project-config-tracked piece). This matches the
-        // project's existing commerce plugins; revisit if cross-environment type
-        // syncing becomes a requirement.
+        // Bundle types live in the database; only the field layout syncs via
+        // project config, matching this project's other commerce plugins.
         if ($runValidation && !$bundleType->validate()) {
             return false;
         }

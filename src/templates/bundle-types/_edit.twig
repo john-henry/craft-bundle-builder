@@ -78,14 +78,14 @@
         }) }}
 
         {{ forms.selectField({
-            label: 'VAT / Tax treatment'|t('bundle-builder'),
-            instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category — use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category — use for independent items sold together (e.g. a bag + a collection service at different VAT rates).'|t('bundle-builder'),
+            label: 'Tax treatment'|t('bundle-builder'),
+            instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).'|t('bundle-builder'),
             id: 'taxTreatment',
             name: 'taxTreatment',
             value: bundleType.taxTreatment,
             options: [
                 { value: 'composite', label: 'Composite supply (single rate)'|t('bundle-builder') },
-                { value: 'multiple', label: 'Multiple supply (apportion VAT per component)'|t('bundle-builder') },
+                { value: 'multiple', label: 'Multiple supply (apportion tax per component)'|t('bundle-builder') },
             ],
         }) }}
 

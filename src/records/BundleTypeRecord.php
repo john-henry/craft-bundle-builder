@@ -21,7 +21,7 @@ use craft\db\ActiveRecord;
  * @property string|null $skuFormat The bundle type's SKU format.
  * @property string|null $descriptionFormat The bundle type's description format.
  * @property bool $showSlugField Whether the slug field is shown on bundles of this type.
- * @property string $taxTreatment How bundles of this type are treated for VAT ("composite" or "multiple").
+ * @property string $taxTreatment How bundles of this type are taxed ("composite" or "multiple").
  * @property string|null $previewTargets The bundle type's preview targets, as JSON.
  * @author JohnHenry <info@johnhenry.ie>
  * @since 1.0.0

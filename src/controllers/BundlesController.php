@@ -47,6 +47,7 @@ class BundlesController extends Controller
      * Renders the bundles index.
      *
      * @return Response The rendering result.
+     * @throws ForbiddenHttpException if the user can't manage bundles of any type.
      * @author JohnHenry <info@johnhenry.ie>
      * @since 1.0.0
      */
@@ -54,8 +55,14 @@ class BundlesController extends Controller
     {
         $this->requireCpRequest();
 
+        $bundleTypes = BundleBuilder::getInstance()->getBundleTypes()->getEditableBundleTypes();
+
+        if (empty($bundleTypes) && !static::currentUser()?->admin) {
+            throw new ForbiddenHttpException(Craft::t('bundle-builder', 'User not authorized to manage bundles of any type.'));
+        }
+
         return $this->renderTemplate('bundle-builder/bundles/index', [
-            'bundleTypes' => BundleBuilder::getInstance()->getBundleTypes()->getEditableBundleTypes(),
+            'bundleTypes' => $bundleTypes,
         ]);
     }
 
@@ -82,7 +89,7 @@ class BundlesController extends Controller
         }
 
         if (!$bundleType) {
-            throw new BadRequestHttpException('No editable bundle type exists.');
+            throw new BadRequestHttpException(Craft::t('bundle-builder', 'No editable bundle type exists.'));
         }
 
         $site = Cp::requestedSite();

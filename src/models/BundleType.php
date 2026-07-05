@@ -71,7 +71,7 @@ class BundleType extends Model
     public bool $showSlugField = true;
 
     /**
-     * @var string How bundles of this type are treated for VAT ("composite" or "multiple").
+     * @var string How bundles of this type are taxed ("composite" or "multiple").
      */
     public string $taxTreatment = TaxTreatment::Composite->value;
 
