@@ -10,6 +10,7 @@ use Craft;
 use craft\commerce\models\TaxCategory;
 use craft\commerce\Plugin as Commerce;
 use craft\db\Migration;
+use johnhenry\bundlebuilder\elements\Bundle;
 use Throwable;
 
 /**
@@ -60,14 +61,28 @@ class Install extends Migration
     }
 
     /**
-     * Drops the plugin's tables.
+     * Removes everything the plugin created: its bundle elements, their field
+     * layouts, the apportioned tax category, and the plugin's tables.
+     *
+     * Craft's uninstall only runs this migration down; it does not delete a
+     * plugin's elements or field layouts, so those are cleared here. The bundle
+     * elements are deleted first, while their foreign keys are still in place, so
+     * the cascade on {{%elements}}.id clears each bundle's Commerce purchasable
+     * rows (and this plugin's bundle/product rows). Order line items keep their
+     * snapshot with the purchasable reference nulled, so historical orders are
+     * left intact.
      *
      * @return bool Whether the migration reverted successfully.
+     * @throws \yii\db\Exception if a delete or drop statement fails.
      * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
+     * @since 1.1.0
      */
     public function safeDown(): bool
     {
+        $this->delete('{{%elements}}', ['type' => Bundle::class]);
+        $this->delete('{{%fieldlayouts}}', ['type' => Bundle::class]);
+        $this->_deleteApportionedTaxCategory();
+
         $this->dropTableIfExists('{{%bundlebuilder_products}}');
         $this->dropTableIfExists('{{%bundlebuilder_bundletypes_sites}}');
         $this->dropTableIfExists('{{%bundlebuilder_bundles}}');
@@ -115,6 +130,39 @@ class Install extends Migration
             $service->saveTaxCategory($taxCategory);
         } catch (Throwable $e) {
             Craft::warning('Could not create the apportioned tax category: ' . $e->getMessage(), 'bundle-builder');
+        }
+    }
+
+    /**
+     * Deletes the zero-rate apportioned tax category the install created, if it
+     * still exists. Any failure is logged rather than aborting the uninstall:
+     * once the bundle purchasables are gone nothing references it, but a stray
+     * reference or a "can't delete the last category" guard shouldn't leave the
+     * plugin half-uninstalled.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.1.0
+     */
+    private function _deleteApportionedTaxCategory(): void
+    {
+        $commerce = Commerce::getInstance();
+
+        if (!$commerce) {
+            return;
+        }
+
+        $service = $commerce->getTaxCategories();
+        $taxCategory = $service->getTaxCategoryByHandle(self::APPORTIONED_TAX_CATEGORY_HANDLE);
+
+        if (!$taxCategory) {
+            return;
+        }
+
+        try {
+            $service->deleteTaxCategoryById($taxCategory->id);
+        } catch (Throwable $e) {
+            Craft::warning('Could not delete the apportioned tax category on uninstall: ' . $e->getMessage(), 'bundle-builder');
         }
     }
 

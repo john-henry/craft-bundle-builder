@@ -2,7 +2,7 @@
   "name": "johnhenry/craft-bundle-builder",
   "description": "Product bundles for Craft Commerce - flexible pricing, cart-time variant selection, and child inventory tracking",
   "type": "craft-plugin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "keywords": [
     "craft",
     "cms",
@@ -29,6 +29,10 @@
   "require-dev": {
     "craftcms/ecs": "dev-main",
     "craftcms/phpstan": "dev-main"
+  },
+  "suggest": {
+    "verbb/hyper": "Adds a Bundle link type to Hyper link fields, so links can point at a bundle.",
+    "verbb/navigation": "Lets bundles be added as nodes in Navigation menus out of the box."
   },
   "minimum-stability": "stable",
   "prefer-stable": true,
