@@ -30,8 +30,12 @@ use johnhenry\bundlebuilder\fieldlayoutelements\BundleComponentsField;
 use johnhenry\bundlebuilder\fieldlayoutelements\BundlePricingField;
 use johnhenry\bundlebuilder\fields\Bundles as BundlesField;
 use johnhenry\bundlebuilder\jobs\RecalculateBundlePrices;
+use johnhenry\bundlebuilder\links\Bundle as BundleLink;
 use johnhenry\bundlebuilder\records\BundleProductRecord;
 use johnhenry\bundlebuilder\variables\BundleBuilderVariable;
+use verbb\hyper\services\Links;
+use verbb\navigation\events\RegisterElementEvent;
+use verbb\navigation\services\Elements as NavigationElements;
 use yii\base\Event;
 
 /**
@@ -58,7 +62,7 @@ trait PluginTrait
     public function getCpNavItem(): ?array
     {
         $item = parent::getCpNavItem();
-        $item['label'] = Craft::t('bundle-builder', 'Bundles');
+        $item['label'] = Craft::t('bundle-builder', 'Bundle Builder');
         $item['subnav'] = [
             'bundles' => [
                 'label' => Craft::t('bundle-builder', 'Bundles'),
@@ -142,6 +146,31 @@ trait PluginTrait
     }
 
     /**
+     * Registers the Bundle link type with Verbb's Hyper, letting editors point a
+     * Hyper link field at a bundle. Only registered when Hyper is installed and
+     * enabled, so the plugin carries Hyper as a soft dependency rather than a
+     * hard one.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.1.0
+     */
+    private function _registerHyperLinkTypes(): void
+    {
+        if (!Craft::$app->getPlugins()->isPluginEnabled('hyper')) {
+            return;
+        }
+
+        Event::on(
+            Links::class,
+            Links::EVENT_REGISTER_LINK_TYPES,
+            static function(RegisterComponentTypesEvent $event) {
+                $event->types[] = BundleLink::class;
+            }
+        );
+    }
+
+    /**
      * Registers the bundle element's native field-layout elements (title, SKU,
      * pricing, components, and the optional purchasable toggles) so they appear
      * in the bundle type's field layout designer and the native editor.
@@ -170,6 +199,55 @@ trait PluginTrait
                 $event->fields[] = PurchasableAvailableForPurchaseField::class;
                 $event->fields[] = PurchasablePromotableField::class;
                 $event->fields[] = PurchasableFreeShippingField::class;
+            }
+        );
+    }
+
+    /**
+     * Enables bundles as a node type in Verbb's Navigation. Navigation already
+     * auto-discovers any element type whose `hasUris()` returns true, but leaves
+     * it toggled off (no `default` flag), so bundles wouldn't appear in a
+     * navigation's node types until an admin enabled them per-nav. This flips the
+     * auto-discovered entry on by default and gives it a bundle-specific button
+     * label. Only registered when Navigation is installed and enabled, so the
+     * plugin carries Navigation as a soft dependency.
+     *
+     * @return void
+     * @author JohnHenry <info@johnhenry.ie>
+     * @since 1.1.0
+     */
+    private function _registerNavigationElements(): void
+    {
+        if (!Craft::$app->getPlugins()->isPluginEnabled('navigation')) {
+            return;
+        }
+
+        Event::on(
+            NavigationElements::class,
+            NavigationElements::EVENT_REGISTER_NAVIGATION_ELEMENT,
+            static function(RegisterElementEvent $event) {
+                // Flip the existing auto-discovered Bundle entry on rather than
+                // appending a second one, which would duplicate it in the node
+                // type list. Only append if a future Navigation release stops
+                // auto-discovering URI-enabled element types.
+                foreach ($event->elements as &$element) {
+                    if (($element['type'] ?? null) === Bundle::class) {
+                        $element['default'] = true;
+                        $element['button'] = Craft::t('bundle-builder', 'Add a bundle');
+
+                        return;
+                    }
+                }
+
+                unset($element);
+
+                $event->elements[] = [
+                    'label' => Craft::t('bundle-builder', 'Bundles'),
+                    'button' => Craft::t('bundle-builder', 'Add a bundle'),
+                    'type' => Bundle::class,
+                    'sources' => [],
+                    'default' => true,
+                ];
             }
         );
     }

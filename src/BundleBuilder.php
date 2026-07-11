@@ -70,7 +70,9 @@ class BundleBuilder extends BasePlugin
 
         $this->_registerElementTypes();
         $this->_registerFieldTypes();
+        $this->_registerHyperLinkTypes();
         $this->_registerNativeFields();
+        $this->_registerNavigationElements();
         $this->_registerPermissions();
         $this->_registerPricingRecalculation();
         $this->_registerTaxAdjuster();

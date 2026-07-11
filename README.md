@@ -1,9 +1,11 @@
 [![Stable Version](https://img.shields.io/packagist/v/johnhenry/craft-bundle-builder?label=stable&style=for-the-badge)](https://packagist.org/packages/johnhenry/craft-bundle-builder)
 [![Static Badge](https://img.shields.io/badge/BUY-plugin?style=for-the-badge&logo=craftcms&logoColor=white&logoSize=auto&label=Craft%20Plugin%20Store&labelColor=%23E5422B)](https://plugins.craftcms.com/bundle-builder?craft5)
 
-<p align="center"><img width="120" height="120" alt="craft-bundle-builder-plugin-icon" src="https://johnhenry.ie/images/plugins/craft-bundle-builder.svg"></p>
 
-<h1 align="center">Bundle Builder for Craft Commerce</h1>
+
+![Bundle Builder](https://johnhenry.ie/images/plugins/promos/bundle-builder/1.png)
+
+<h1>Bundle Builder for Craft Commerce</h1>
 
 
 
