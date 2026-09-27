@@ -8,9 +8,7 @@
  * settings HTML actually renders: Hyper's base ElementLink derives the settings
  * template path from the class name (hyper/links/bundle/settings), which only
  * exists for Hyper's own built-in types, so the link type overrides
- * getSettingsHtml() to render the shared element template instead. That override
- * is exactly what regressed once (a template-not-found on the field settings
- * screen), so it's guarded here.
+ * getSettingsHtml() to render the shared element template instead.
  *
  * Hyper is a soft dependency: the plugin registers the link type only when Hyper
  * is enabled, so these are skipped when it isn't.

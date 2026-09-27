@@ -23,7 +23,8 @@ use craft\db\ActiveRecord;
  * @property float|null $discountAmount The automatic discount amount.
  * @property string|null $postDate The date the bundle becomes available.
  * @property string|null $expiryDate The date the bundle stops being available.
- * @author JohnHenry <info@johnhenry.ie>
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleRecord extends ActiveRecord
@@ -35,7 +36,7 @@ class BundleRecord extends ActiveRecord
      * Returns the name of the database table this record uses.
      *
      * @return string The table name.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function tableName(): string

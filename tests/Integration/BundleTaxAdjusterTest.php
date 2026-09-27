@@ -18,6 +18,7 @@
 
 use craft\commerce\elements\Order;
 use craft\commerce\models\LineItem;
+use craft\commerce\models\OrderAdjustment;
 use craft\commerce\models\TaxCategory;
 use craft\commerce\models\TaxRate;
 use craft\commerce\Plugin as Commerce;
@@ -46,16 +47,22 @@ function makeTaxCategory(string $name): TaxCategory
 }
 
 /**
- * Saves an "everywhere" purchasable tax rate (no tax zone, so it applies
- * regardless of address) at the given rate for a tax category.
+ * Saves an "everywhere" tax rate (no tax zone, so it applies regardless of
+ * address) at the given rate for a tax category. Defaults to a purchasable
+ * rate; pass another taxable subject to test that one.
  */
-function makeTaxRate(int $taxCategoryId, float $rate, bool $include = false, array $taxIdValidators = []): TaxRate
-{
+function makeTaxRate(
+    int $taxCategoryId,
+    float $rate,
+    bool $include = false,
+    array $taxIdValidators = [],
+    string $taxable = TaxRateRecord::TAXABLE_PURCHASABLE,
+): TaxRate {
     $taxRate = new TaxRate();
     $taxRate->name = 'Test rate ' . StringHelper::randomString(4);
     $taxRate->rate = $rate;
     $taxRate->include = $include;
-    $taxRate->taxable = TaxRateRecord::TAXABLE_PURCHASABLE;
+    $taxRate->taxable = $taxable;
     $taxRate->taxCategoryId = $taxCategoryId;
     $taxRate->taxIdValidators = $taxIdValidators;
     $taxRate->storeId = Commerce::getInstance()->getStores()->getPrimaryStore()->id;
@@ -66,22 +73,6 @@ function makeTaxRate(int $taxCategoryId, float $rate, bool $include = false, arr
     }
 
     return $taxRate;
-}
-
-/**
- * Builds an unsaved order carrying the given line items, at the given
- * currency, in the primary store.
- *
- * @param LineItem[] $lineItems
- */
-function orderWithLineItems(array $lineItems, string $currency = 'USD'): Order
-{
-    $order = new Order();
-    $order->storeId = Commerce::getInstance()->getStores()->getPrimaryStore()->id;
-    $order->currency = $currency;
-    $order->setLineItems($lineItems);
-
-    return $order;
 }
 
 /**
@@ -96,6 +87,7 @@ function bundleTaxLineItem(Bundle $bundle, array $selections, float $salePrice, 
     $lineItem->qty = $qty;
     $lineItem->setPrice($salePrice);
     $lineItem->setPurchasable($bundle);
+    $lineItem->taxCategoryId = Bundle::apportionedTaxCategoryId();
 
     $snapshot = $lineItem->getSnapshot() ?? [];
     $snapshot['bundleProducts'] = $selections;
@@ -285,6 +277,7 @@ describe('BundleTaxAdjuster::adjust(): line discounts', function () {
         $lineItem->qty = 1;
         $lineItem->setPrice(10.00);
         $lineItem->setPurchasable($bundle);
+        $lineItem->taxCategoryId = Bundle::apportionedTaxCategoryId();
         $snapshot = $lineItem->getSnapshot() ?? [];
         $snapshot['bundleProducts'] = [$a['selection'], $b['selection']];
         $lineItem->setSnapshot($snapshot);
@@ -315,12 +308,8 @@ describe('BundleTaxAdjuster::adjust(): getIsTaxable() gate', function () {
 
         $lineItem = bundleTaxLineItem($bundle, [$component['selection']], 10.00);
 
-        // Anonymous subclass overriding getIsTaxable(), mirroring this
-        // project's own established pattern (see tests/README.md) for
-        // isolating one branch of a method without a real non-taxable
-        // purchasable to hand it (Bundle::getIsTaxable() always returns true,
-        // inherited from Purchasable; there is currently no way to make a
-        // real bundle non-taxable).
+        // A real bundle is always taxable, so override getIsTaxable() to
+        // reach the non-taxable branch.
         $nonTaxableLineItem = new class extends LineItem {
             public function getIsTaxable(): bool
             {
@@ -428,3 +417,112 @@ describe('BundleTaxAdjuster::_allocateProportionally()', function () {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// Taxable subjects: price, shipping and price + shipping rates
+// ---------------------------------------------------------------------------
+
+describe('BundleTaxAdjuster::adjust(): taxable subjects', function () {
+    /**
+     * Builds an order with one multiple-supply bundle line split 4:6 between a
+     * zero-rated and a standard-rated component, carrying the given line
+     * shipping cost, with one rate of the given taxable subject at 20%.
+     */
+    function taxableSubjectOrder(string $taxable, float $shipping = 0.0): Order
+    {
+        $zeroRated = makeTaxCategory('Zero Rated');
+        $standard = makeTaxCategory('Standard');
+        makeTaxRate($standard->id, 0.20, taxable: $taxable);
+
+        $exempt = taxableComponent(4.0, $zeroRated->id);
+        $taxed = taxableComponent(6.0, $standard->id);
+
+        $bundleType = makeBundleType('Subjects', 'subjects' . StringHelper::randomString(6), TaxTreatment::Multiple->value);
+        $bundle = new Bundle();
+        $bundle->typeId = $bundleType->id;
+
+        $lineItem = bundleTaxLineItem($bundle, [$exempt['selection'], $taxed['selection']], 10.00);
+        $order = orderWithLineItems([$lineItem]);
+
+        if ($shipping > 0) {
+            $adjustment = new OrderAdjustment();
+            $adjustment->type = 'shipping';
+            $adjustment->name = 'Shipping';
+            $adjustment->amount = $shipping;
+            $adjustment->setOrder($order);
+            $adjustment->setLineItem($lineItem);
+            $order->setAdjustments([$adjustment]);
+        }
+
+        return $order;
+    }
+
+    it('taxes the apportioned price for a line item price rate', function () {
+        $adjustments = (new BundleTaxAdjuster())->adjust(taxableSubjectOrder(TaxRateRecord::TAXABLE_PRICE));
+
+        expect($adjustments)->toHaveCount(1)
+            ->and(round($adjustments[0]->amount, 2))->toBe(1.20); // 20% of the $6 share
+    });
+
+    it('taxes the apportioned shipping for a line item shipping rate', function () {
+        $adjustments = (new BundleTaxAdjuster())->adjust(taxableSubjectOrder(TaxRateRecord::TAXABLE_SHIPPING, 5.0));
+
+        expect($adjustments)->toHaveCount(1)
+            ->and(round($adjustments[0]->amount, 2))->toBe(0.60); // 20% of the $3 shipping share
+    });
+
+    it('taxes the apportioned price and shipping for a line item price + shipping rate', function () {
+        $adjustments = (new BundleTaxAdjuster())->adjust(taxableSubjectOrder(TaxRateRecord::TAXABLE_PRICE_SHIPPING, 5.0));
+
+        expect($adjustments)->toHaveCount(1)
+            ->and(round($adjustments[0]->amount, 2))->toBe(1.80); // 20% of $6 + $3
+    });
+
+    it('leaves order-level rates to Commerce', function () {
+        $adjustments = (new BundleTaxAdjuster())->adjust(taxableSubjectOrder(TaxRateRecord::TAXABLE_ORDER_TOTAL_PRICE));
+
+        expect($adjustments)->toBe([]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Composite bundles: left to Commerce, so never taxed twice
+// ---------------------------------------------------------------------------
+
+describe('BundleTaxAdjuster::adjust(): composite bundles', function () {
+    it('leaves a composite bundle line to Commerce’s own tax adjuster', function () {
+        $standard = makeTaxCategory('Standard');
+        makeTaxRate($standard->id, 0.20, taxable: TaxRateRecord::TAXABLE_PRICE);
+        $component = taxableComponent(10.0, $standard->id);
+
+        $bundle = new Bundle();
+        $bundle->typeId = makeBundleType('Composite', 'composite' . StringHelper::randomString(6), TaxTreatment::Composite->value)->id;
+
+        // A composite line keeps the bundle's own category, not the apportioned one.
+        $lineItem = bundleTaxLineItem($bundle, [$component['selection']], 10.00);
+        $lineItem->taxCategoryId = $bundle->getTaxCategoryId();
+
+        expect((new BundleTaxAdjuster())->adjust(orderWithLineItems([$lineItem])))->toBe([]);
+    });
+});
+
+describe('BundleTaxAdjuster::adjust(): components that cost nothing', function () {
+    it('still taxes the line, split by quantity', function () {
+        $category = makeTaxCategory('Free Parts');
+        makeTaxRate($category->id, 0.20);
+
+        $a = taxableComponent(0.0, $category->id, qty: 1);
+        $b = taxableComponent(0.0, $category->id, qty: 3);
+
+        $bundle = new Bundle();
+        $bundle->typeId = makeBundleType('Free', 'free' . StringHelper::randomString(6), TaxTreatment::Multiple->value)->id;
+
+        // A fixed price bundle made of free components
+        $order = orderWithLineItems([bundleTaxLineItem($bundle, [$a['selection'], $b['selection']], 40.00)]);
+        $adjustments = (new BundleTaxAdjuster())->adjust($order);
+
+        $total = array_sum(array_map(static fn($adjustment) => $adjustment->amount, $adjustments));
+        expect(round($total, 2))->toBe(8.00);
+    });
+});
+

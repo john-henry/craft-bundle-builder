@@ -12,6 +12,8 @@ use craft\commerce\Plugin as Commerce;
 use craft\db\Migration;
 use johnhenry\bundlebuilder\elements\Bundle;
 use Throwable;
+use yii\base\InvalidConfigException;
+use yii\db\Exception;
 
 /**
  * Install migration.
@@ -23,7 +25,7 @@ use Throwable;
  * the products that make up each bundle live in the {{%bundlebuilder_products}}
  * pivot.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class Install extends Migration
@@ -44,14 +46,18 @@ class Install extends Migration
      *
      * @return bool Whether the migration applied successfully.
      * @throws Throwable if the tax category can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function safeUp(): bool
     {
-        if ($this->_createTables()) {
-            $this->_createIndexes();
-            $this->_addForeignKeys();
+        // Indexes and foreign keys are only added to tables created on this run,
+        // so re-running the install over existing tables is a no-op.
+        $created = $this->_createTables();
+
+        if (!empty($created)) {
+            $this->_createIndexes($created);
+            $this->_addForeignKeys($created);
             Craft::$app->getDb()->getSchema()->refresh();
         }
 
@@ -61,20 +67,16 @@ class Install extends Migration
     }
 
     /**
-     * Removes everything the plugin created: its bundle elements, their field
-     * layouts, the apportioned tax category, and the plugin's tables.
+     * Removes the bundle elements, their field layouts, the apportioned tax
+     * category, and the plugin's tables.
      *
-     * Craft's uninstall only runs this migration down; it does not delete a
-     * plugin's elements or field layouts, so those are cleared here. The bundle
-     * elements are deleted first, while their foreign keys are still in place, so
-     * the cascade on {{%elements}}.id clears each bundle's Commerce purchasable
-     * rows (and this plugin's bundle/product rows). Order line items keep their
-     * snapshot with the purchasable reference nulled, so historical orders are
-     * left intact.
+     * Craft's uninstall doesn't delete a plugin's elements or field layouts.
+     * Elements go first, while the foreign keys still cascade to Commerce's
+     * purchasable rows. Line items keep their snapshot, so past orders are intact.
      *
      * @return bool Whether the migration reverted successfully.
-     * @throws \yii\db\Exception if a delete or drop statement fails.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Exception|InvalidConfigException if a delete or drop statement fails.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public function safeDown(): bool
@@ -101,7 +103,7 @@ class Install extends Migration
      *
      * @return void
      * @throws Throwable if the tax category can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _ensureApportionedTaxCategory(): void
@@ -124,8 +126,7 @@ class Install extends Migration
             'description' => 'Zero-rate category for multiple-supply bundles; tax is apportioned across components by Bundle Builder.',
         ]);
 
-        // Don't let a tax-category failure abort the whole install; the tables
-        // are already created and the category can be created later in the CP.
+        // A failure here shouldn't abort the install; the category can be added in the CP.
         try {
             $service->saveTaxCategory($taxCategory);
         } catch (Throwable $e) {
@@ -134,14 +135,12 @@ class Install extends Migration
     }
 
     /**
-     * Deletes the zero-rate apportioned tax category the install created, if it
-     * still exists. Any failure is logged rather than aborting the uninstall:
-     * once the bundle purchasables are gone nothing references it, but a stray
-     * reference or a "can't delete the last category" guard shouldn't leave the
-     * plugin half-uninstalled.
+     * Deletes the apportioned tax category, if it still exists. Failures are
+     * logged rather than aborting the uninstall.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     private function _deleteApportionedTaxCategory(): void
@@ -167,15 +166,17 @@ class Install extends Migration
     }
 
     /**
-     * Creates the plugin's tables.
+     * Creates any of the plugin's tables that don't exist yet.
      *
-     * @return bool Whether the tables were created.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return string[] The tables created on this run.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function _createTables(): bool
+    private function _createTables(): array
     {
-        $this->createTable('{{%bundlebuilder_bundletypes}}', [
+        $created = [];
+
+        $this->_createTableIfMissing($created, '{{%bundlebuilder_bundletypes}}', [
             'id' => $this->primaryKey(),
             'fieldLayoutId' => $this->integer(),
             'name' => $this->string()->notNull(),
@@ -183,6 +184,8 @@ class Install extends Migration
             'skuFormat' => $this->string(),
             'descriptionFormat' => $this->string(),
             'showSlugField' => $this->boolean()->notNull()->defaultValue(true),
+            'enableVersioning' => $this->boolean()->notNull()->defaultValue(false),
+            'componentSources' => $this->text(),
             'taxTreatment' => $this->string()->notNull()->defaultValue('composite'),
             'previewTargets' => $this->text(),
             'dateCreated' => $this->dateTime()->notNull(),
@@ -190,7 +193,7 @@ class Install extends Migration
             'uid' => $this->uid(),
         ]);
 
-        $this->createTable('{{%bundlebuilder_bundletypes_sites}}', [
+        $this->_createTableIfMissing($created, '{{%bundlebuilder_bundletypes_sites}}', [
             'id' => $this->primaryKey(),
             'bundleTypeId' => $this->integer()->notNull(),
             'siteId' => $this->integer()->notNull(),
@@ -203,11 +206,8 @@ class Install extends Migration
             'uid' => $this->uid(),
         ]);
 
-        // Only bundle-specific columns live here. SKU, base price, tax/shipping
-        // category, free-shipping, inventory tracking and dimensions are all
-        // persisted natively by Commerce's Purchasable base class
-        // (commerce_purchasables / commerce_purchasables_stores).
-        $this->createTable('{{%bundlebuilder_bundles}}', [
+        // Bundle-specific columns only; Commerce's purchasable tables hold the rest.
+        $this->_createTableIfMissing($created, '{{%bundlebuilder_bundles}}', [
             'id' => $this->integer()->notNull(),
             'typeId' => $this->integer()->notNull(),
             'pricingStrategy' => $this->string()->notNull()->defaultValue('fixed'),
@@ -221,61 +221,99 @@ class Install extends Migration
             'PRIMARY KEY([[id]])',
         ]);
 
-        $this->createTable('{{%bundlebuilder_products}}', [
+        $this->_createTableIfMissing($created, '{{%bundlebuilder_products}}', [
             'id' => $this->primaryKey(),
             'bundleId' => $this->integer()->notNull(),
             'productId' => $this->integer()->notNull(),
             'qty' => $this->integer()->unsigned()->notNull()->defaultValue(1),
+            'variantIds' => $this->text(),
             'sortOrder' => $this->smallInteger()->unsigned(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),
         ]);
 
-        return true;
+        return $created;
     }
 
     /**
-     * Creates the plugin's indexes.
+     * Creates a table unless it already exists, recording it in `$created`.
      *
+     * @param string[] $created The tables created so far on this run.
+     * @param string $table The table name.
+     * @param array<int|string, mixed> $columns The column definitions.
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
      */
-    private function _createIndexes(): void
+    private function _createTableIfMissing(array &$created, string $table, array $columns): void
     {
-        $this->createIndex(null, '{{%bundlebuilder_bundletypes}}', ['handle'], true);
-        $this->createIndex(null, '{{%bundlebuilder_bundletypes}}', ['fieldLayoutId'], false);
+        if ($this->db->tableExists($table)) {
+            return;
+        }
 
-        $this->createIndex(null, '{{%bundlebuilder_bundletypes_sites}}', ['bundleTypeId', 'siteId'], true);
-        $this->createIndex(null, '{{%bundlebuilder_bundletypes_sites}}', ['siteId'], false);
-
-        $this->createIndex(null, '{{%bundlebuilder_bundles}}', ['typeId'], false);
-        $this->createIndex(null, '{{%bundlebuilder_bundles}}', ['postDate'], false);
-        $this->createIndex(null, '{{%bundlebuilder_bundles}}', ['expiryDate'], false);
-
-        $this->createIndex(null, '{{%bundlebuilder_products}}', ['bundleId'], false);
-        $this->createIndex(null, '{{%bundlebuilder_products}}', ['productId'], false);
+        $this->createTable($table, $columns);
+        $created[] = $table;
     }
 
     /**
-     * Adds the plugin's foreign keys.
+     * Creates the indexes for the given newly created tables.
      *
+     * @param string[] $tables The tables created on this run.
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    private function _addForeignKeys(): void
+    private function _createIndexes(array $tables): void
     {
-        $this->addForeignKey(null, '{{%bundlebuilder_bundletypes}}', ['fieldLayoutId'], '{{%fieldlayouts}}', ['id'], 'SET NULL', null);
+        $indexes = [
+            '{{%bundlebuilder_bundletypes}}' => [[['handle'], true], [['fieldLayoutId'], false]],
+            '{{%bundlebuilder_bundletypes_sites}}' => [[['bundleTypeId', 'siteId'], true], [['siteId'], false]],
+            '{{%bundlebuilder_bundles}}' => [[['typeId'], false], [['postDate'], false], [['expiryDate'], false]],
+            '{{%bundlebuilder_products}}' => [[['bundleId'], false], [['productId'], false]],
+        ];
 
-        $this->addForeignKey(null, '{{%bundlebuilder_bundletypes_sites}}', ['bundleTypeId'], '{{%bundlebuilder_bundletypes}}', ['id'], 'CASCADE', null);
-        $this->addForeignKey(null, '{{%bundlebuilder_bundletypes_sites}}', ['siteId'], '{{%sites}}', ['id'], 'CASCADE', 'CASCADE');
+        foreach ($tables as $table) {
+            foreach ($indexes[$table] ?? [] as [$columns, $unique]) {
+                $this->createIndex(null, $table, $columns, $unique);
+            }
+        }
+    }
 
-        $this->addForeignKey(null, '{{%bundlebuilder_bundles}}', ['id'], '{{%elements}}', ['id'], 'CASCADE', null);
-        $this->addForeignKey(null, '{{%bundlebuilder_bundles}}', ['typeId'], '{{%bundlebuilder_bundletypes}}', ['id'], 'CASCADE', null);
+    /**
+     * Adds the foreign keys for the given newly created tables.
+     *
+     * @param string[] $tables The tables created on this run.
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.0.0
+     */
+    private function _addForeignKeys(array $tables): void
+    {
+        $foreignKeys = [
+            '{{%bundlebuilder_bundletypes}}' => [
+                [['fieldLayoutId'], '{{%fieldlayouts}}', 'SET NULL', null],
+            ],
+            '{{%bundlebuilder_bundletypes_sites}}' => [
+                [['bundleTypeId'], '{{%bundlebuilder_bundletypes}}', 'CASCADE', null],
+                [['siteId'], '{{%sites}}', 'CASCADE', 'CASCADE'],
+            ],
+            '{{%bundlebuilder_bundles}}' => [
+                [['id'], '{{%elements}}', 'CASCADE', null],
+                [['typeId'], '{{%bundlebuilder_bundletypes}}', 'CASCADE', null],
+            ],
+            // No foreign key on productId: a deleted product has to leave its
+            // row behind, so the bundle shows it as missing rather than
+            // quietly selling without it.
+            '{{%bundlebuilder_products}}' => [
+                [['bundleId'], '{{%bundlebuilder_bundles}}', 'CASCADE', null],
+            ],
+        ];
 
-        $this->addForeignKey(null, '{{%bundlebuilder_products}}', ['bundleId'], '{{%bundlebuilder_bundles}}', ['id'], 'CASCADE', null);
-        $this->addForeignKey(null, '{{%bundlebuilder_products}}', ['productId'], '{{%commerce_products}}', ['id'], 'CASCADE', null);
+        foreach ($tables as $table) {
+            foreach ($foreignKeys[$table] ?? [] as [$columns, $refTable, $delete, $update]) {
+                $this->addForeignKey(null, $table, $columns, $refTable, ['id'], $delete, $update);
+            }
+        }
     }
 }

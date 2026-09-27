@@ -16,37 +16,6 @@ use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\enums\PricingStrategy;
 use johnhenry\bundlebuilder\models\BundleType;
 
-/**
- * Saves a bundle of the given type with the given component products, at the
- * given pricing strategy. Rolled back with the test transaction.
- *
- * @param array<int, array{product: \craft\commerce\elements\Product, qty: int}> $components
- */
-function makeSavedBundle(
-    BundleType $type,
-    array $components,
-    string $pricingStrategy = PricingStrategy::Automatic->value,
-): Bundle {
-    return withFileCacheWarningsSuppressed(static function () use ($type, $components, $pricingStrategy): Bundle {
-        $bundle = new Bundle();
-        $bundle->typeId = $type->id;
-        $bundle->siteId = Craft::$app->getSites()->getPrimarySite()->id;
-        $bundle->title = 'Test Bundle ' . StringHelper::randomString(6);
-        $bundle->enabled = true;
-        $bundle->pricingStrategy = $pricingStrategy;
-        $bundle->setProducts(array_map(static fn(array $component): array => [
-            'productId' => $component['product']->id,
-            'qty' => $component['qty'],
-        ], $components));
-
-        if (!Craft::$app->getElements()->saveElement($bundle, false)) {
-            throw new RuntimeException('Could not save bundle: ' . implode(', ', $bundle->getErrorSummary(true)));
-        }
-
-        return $bundle;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // getBundleIdsForProduct()
 // ---------------------------------------------------------------------------
@@ -105,3 +74,21 @@ describe('BundlePricing recalculation', function () {
         expect((float)$reloaded->getBasePrice())->toEqual(99.0);
     });
 });
+
+describe('A component variant saved on its own', function () {
+    it('recalculates the automatic bundles that use its product', function () {
+        $product = makeProduct(10.0);
+        $bundle = makeSavedBundle(makeBundleType('Variant Save ' . StringHelper::randomString(6), 'variantSave' . StringHelper::randomString(6)), [
+            ['product' => $product, 'qty' => 1],
+        ]);
+        expect((float)$bundle->getBasePrice())->toBe(10.0);
+
+        $variant = \craft\commerce\Plugin::getInstance()->getProducts()->getProductById($product->id)?->getDefaultVariant();
+        $variant->setBasePrice(14.0);
+        Craft::$app->getElements()->saveElement($variant, false);
+        Craft::$app->getQueue()->run();
+
+        expect((float)Bundle::find()->id($bundle->id)->status(null)->one()->getBasePrice())->toBe(14.0);
+    });
+});
+

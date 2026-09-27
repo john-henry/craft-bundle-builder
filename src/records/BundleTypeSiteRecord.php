@@ -24,7 +24,10 @@ use yii\db\ActiveQueryInterface;
  * @property string|null $template The template path for bundles in this site.
  * @property bool $hasUrls Whether bundles of this type have URLs in this site.
  * @property bool $enabledByDefault Whether new bundles are enabled by default in this site.
- * @author JohnHenry <info@johnhenry.ie>
+ * @property-read ActiveQueryInterface $bundleType
+ * @property-read ActiveQueryInterface $site
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleTypeSiteRecord extends ActiveRecord
@@ -36,7 +39,7 @@ class BundleTypeSiteRecord extends ActiveRecord
      * Returns the name of the database table this record uses.
      *
      * @return string The table name.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function tableName(): string
@@ -48,7 +51,7 @@ class BundleTypeSiteRecord extends ActiveRecord
      * Returns the bundle type this record belongs to.
      *
      * @return ActiveQueryInterface The relational query.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleType(): ActiveQueryInterface
@@ -60,7 +63,7 @@ class BundleTypeSiteRecord extends ActiveRecord
      * Returns the site this record belongs to.
      *
      * @return ActiveQueryInterface The relational query.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getSite(): ActiveQueryInterface

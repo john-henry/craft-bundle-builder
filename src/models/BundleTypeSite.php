@@ -6,18 +6,20 @@
 
 namespace johnhenry\bundlebuilder\models;
 
+use Craft;
 use craft\base\Model;
 use craft\models\Site;
-use johnhenry\bundlebuilder\models\BundleType as BundleTypeModel;
 
 /**
  * Bundle type site settings model.
  *
- * Holds the per-site URL configuration for a {@see BundleTypeModel}: whether
- * bundles of the type are routable in the site, their URI format, and the
- * template that renders them.
+ * Per-site URL settings for a {@see BundleType}: whether bundles have URLs in
+ * the site, their URI format, and the template that renders them.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @property-read Site|null $site
+ * @property BundleType|null $bundleType
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleTypeSite extends Model
@@ -64,9 +66,9 @@ class BundleTypeSite extends Model
     // =========================================================================
 
     /**
-     * @var BundleTypeModel|null The bundle type these settings belong to.
+     * @var BundleType|null The bundle type these settings belong to.
      */
-    private ?BundleTypeModel $_bundleType = null;
+    private ?BundleType $_bundleType = null;
 
     /**
      * @var Site|null The site these settings belong to.
@@ -79,11 +81,11 @@ class BundleTypeSite extends Model
     /**
      * Returns the bundle type these settings belong to.
      *
-     * @return BundleTypeModel|null The bundle type, or null if not set.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return BundleType|null The bundle type, or null if not set.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function getBundleType(): ?BundleTypeModel
+    public function getBundleType(): ?BundleType
     {
         return $this->_bundleType;
     }
@@ -91,12 +93,12 @@ class BundleTypeSite extends Model
     /**
      * Sets the bundle type these settings belong to.
      *
-     * @param BundleTypeModel $bundleType The bundle type.
+     * @param BundleType $bundleType The bundle type.
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function setBundleType(BundleTypeModel $bundleType): void
+    public function setBundleType(BundleType $bundleType): void
     {
         $this->_bundleType = $bundleType;
     }
@@ -105,13 +107,13 @@ class BundleTypeSite extends Model
      * Returns the site these settings belong to.
      *
      * @return Site|null The site, or null if not set.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getSite(): ?Site
     {
         if ($this->_site === null && $this->siteId) {
-            $this->_site = \Craft::$app->getSites()->getSiteById($this->siteId);
+            $this->_site = Craft::$app->getSites()->getSiteById($this->siteId);
         }
         return $this->_site;
     }
@@ -119,8 +121,8 @@ class BundleTypeSite extends Model
     /**
      * @inheritdoc
      *
-     * @return array The validation rules.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<int, array<int|string, mixed>> The validation rules.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function defineRules(): array

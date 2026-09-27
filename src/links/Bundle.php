@@ -8,20 +8,22 @@ namespace johnhenry\bundlebuilder\links;
 
 use Craft;
 use johnhenry\bundlebuilder\elements\Bundle as BundleElement;
+use Twig\Error\LoaderError;
+use Twig\Error\RuntimeError;
+use Twig\Error\SyntaxError;
 use verbb\hyper\base\ElementLink;
 use verbb\hyper\fieldlayoutelements\LinkField;
 use verbb\hyper\fields\HyperField;
+use yii\base\Exception;
 
 /**
  * Bundle link type.
  *
- * Registers the {@see BundleElement} as a selectable target in Verbb's Hyper
- * link field, so editors can point a Hyper link at a bundle the same way they
- * would an entry or product. All of the selection UI, element resolution, and
- * URL/text rendering is inherited from {@see ElementLink}; this class only
- * declares which element type it targets.
+ * Hyper link type for linking to a {@see BundleElement}.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @property-read null|string $settingsHtml
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.1.0
  */
 class Bundle extends ElementLink
@@ -32,8 +34,8 @@ class Bundle extends ElementLink
     /**
      * @inheritdoc
      *
-     * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return string The link type's display name.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public static function displayName(): string
@@ -42,10 +44,10 @@ class Bundle extends ElementLink
     }
 
     /**
-     * @inheritdoc
+     * Returns the element type this link type targets.
      *
-     * @return string
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return string The bundle element class.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public static function elementType(): string
@@ -57,19 +59,16 @@ class Bundle extends ElementLink
     // =========================================================================
 
     /**
-     * @inheritdoc
+     * Returns the link type's settings HTML.
      *
-     * Rendered directly from Hyper's shared element-link templates rather than a
-     * per-type folder: the base {@see ElementLink::getSettingsHtml()} derives the
-     * template path from the class name (`hyper/links/bundle/settings`), which
-     * only exists for Hyper's own built-in types. This points at the same shared
-     * template its built-ins ultimately include.
+     * Renders Hyper's shared element template, as the base class looks for
+     * `hyper/links/bundle/settings`, which only exists for Hyper's own types.
      *
-     * @return string|null
-     * @throws \yii\base\Exception If the shared element template can't be loaded.
-     * @throws \Twig\Error\LoaderError If the shared element template can't be found.
-     * @throws \Twig\Error\SyntaxError If the shared element template has a syntax error.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return string|null The settings HTML.
+     * @throws Exception If the shared element template can't be loaded.
+     * @throws LoaderError If the shared element template can't be found.
+     * @throws SyntaxError|RuntimeError If the shared element template has a syntax error.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public function getSettingsHtml(): ?string
@@ -81,18 +80,16 @@ class Bundle extends ElementLink
     }
 
     /**
-     * @inheritdoc
+     * Returns the link type's input HTML, from Hyper's shared element template
+     * (see {@see self::getSettingsHtml()}).
      *
-     * See {@see self::getSettingsHtml()} for why the shared element template is
-     * rendered directly instead of a per-type folder.
-     *
-     * @param LinkField $layoutField The Hyper link field-layout element.
+     * @param LinkField $layoutField The Hyper link field layout element.
      * @param HyperField $field The Hyper field.
-     * @return string|null
-     * @throws \yii\base\Exception If the shared element template can't be loaded.
-     * @throws \Twig\Error\LoaderError If the shared element template can't be found.
-     * @throws \Twig\Error\SyntaxError If the shared element template has a syntax error.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return string|null The input HTML.
+     * @throws Exception If the shared element template can't be loaded.
+     * @throws LoaderError If the shared element template can't be found.
+     * @throws SyntaxError|RuntimeError If the shared element template has a syntax error.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public function getInputHtml(LinkField $layoutField, HyperField $field): ?string

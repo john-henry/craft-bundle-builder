@@ -18,7 +18,7 @@ use yii\base\InvalidConfigException;
  * @property BundlePricing $bundlePricing
  * @property BundleTypes $bundleTypes
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 trait ServicesTrait
@@ -29,8 +29,8 @@ trait ServicesTrait
     /**
      * Returns the plugin's service component configuration.
      *
-     * @return array The plugin's component configuration.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array{components: array<string, class-string>} The plugin's component configuration.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function config(): array
@@ -49,7 +49,7 @@ trait ServicesTrait
      *
      * @return BundleCart The bundle cart service.
      * @throws InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleCart(): BundleCart
@@ -64,7 +64,7 @@ trait ServicesTrait
      *
      * @return BundlePricing The bundle pricing service.
      * @throws InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundlePricing(): BundlePricing
@@ -79,7 +79,7 @@ trait ServicesTrait
      *
      * @return BundleTypes The bundle types service.
      * @throws InvalidConfigException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleTypes(): BundleTypes

@@ -1,17 +1,21 @@
 {
   "name": "johnhenry/craft-bundle-builder",
-  "description": "Product bundles for Craft Commerce - flexible pricing, cart-time variant selection, and child inventory tracking",
+  "description": "Product bundles for Craft Commerce: one cart line at one price, with the customer choosing each part's variant and stock taken off each part.",
   "type": "craft-plugin",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "keywords": [
-    "craft",
-    "cms",
-    "craftcms",
     "craft-commerce",
-    "craft-plugin",
-    "bundle",
-    "bundles",
-    "product-bundles"
+    "product bundles",
+    "bundle products",
+    "bundle builder",
+    "kits",
+    "hampers",
+    "gift boxes",
+    "variant selection",
+    "bundle pricing",
+    "bundle discounts",
+    "bundle inventory",
+    "bundle vat"
   ],
   "license": "proprietary",
   "authors": [
@@ -24,11 +28,12 @@
   "require": {
     "php": "^8.2 || ^8.3 || ^8.4",
     "craftcms/cms": "^5.0",
-    "craftcms/commerce": "^5.0"
+    "craftcms/commerce": "^5.3"
   },
   "require-dev": {
     "craftcms/ecs": "dev-main",
-    "craftcms/phpstan": "dev-main"
+    "craftcms/phpstan": "dev-main",
+    "phpstan/phpstan": "^2.2"
   },
   "suggest": {
     "verbb/hyper": "Adds a Bundle link type to Hyper link fields, so links can point at a bundle.",

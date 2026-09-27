@@ -21,9 +21,12 @@ use craft\db\ActiveRecord;
  * @property string|null $skuFormat The bundle type's SKU format.
  * @property string|null $descriptionFormat The bundle type's description format.
  * @property bool $showSlugField Whether the slug field is shown on bundles of this type.
+ * @property bool $enableVersioning Whether bundles of this type save revisions.
+ * @property string|null $componentSources The product sources components can be picked from, as JSON.
  * @property string $taxTreatment How bundles of this type are taxed ("composite" or "multiple").
  * @property string|null $previewTargets The bundle type's preview targets, as JSON.
- * @author JohnHenry <info@johnhenry.ie>
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleTypeRecord extends ActiveRecord
@@ -35,7 +38,7 @@ class BundleTypeRecord extends ActiveRecord
      * Returns the name of the database table this record uses.
      *
      * @return string The table name.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function tableName(): string

@@ -7,7 +7,7 @@
 /**
  * Bundle Builder English translations.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 return [
@@ -23,6 +23,22 @@ return [
     'Type' => 'Type',
     'Components' => 'Components',
     'Product' => 'Product',
+    'Bundle components' => 'Bundle components',
+    'Change variants' => 'Change variants',
+    'Change bundle variants' => 'Change bundle variants',
+    'Save' => 'Save',
+    'Cancel' => 'Cancel',
+    'Save or discard your changes to the order before changing bundle variants.' => 'Save or discard your changes to the order before changing bundle variants.',
+    'Couldn’t change the variants.' => 'Couldn’t change the variants.',
+    'Variants changed.' => 'Variants changed.',
+    'Order not found.' => 'Order not found.',
+    'User not authorized to edit this order.' => 'User not authorized to edit this order.',
+    'Variants can only be changed before the order is completed.' => 'Variants can only be changed before the order is completed.',
+    'That bundle line isn’t on this order.' => 'That bundle line isn’t on this order.',
+    'Choose a variant for “{product}”.' => 'Choose a variant for “{product}”.',
+    'Another line already has these choices. Change its quantity instead.' => 'Another line already has these choices. Change its quantity instead.',
+    'Couldn’t save the order.' => 'Couldn’t save the order.',
+    'This bundle is no longer available, so its variants can’t be changed.' => 'This bundle is no longer available, so its variants can’t be changed.',
     'Qty' => 'Qty',
     'Quantity' => 'Quantity',
 
@@ -65,7 +81,7 @@ return [
     // Tax treatment
     // =========================================================================
     'Tax treatment' => 'Tax treatment',
-    'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).' => 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).',
+    'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at one rate, using the store’s default tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).' => 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at one rate, using the store’s default tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).',
     'Composite supply (single rate)' => 'Composite supply (single rate)',
     'Multiple supply (apportion tax per component)' => 'Multiple supply (apportion tax per component)',
 
@@ -73,6 +89,15 @@ return [
     // =========================================================================
     'New bundle' => 'New bundle',
     'Add a product' => 'Add a product',
+    'Couldn’t add a product row.' => 'Couldn’t add a product row.',
+    'Component Sources' => 'Component Sources',
+    '“{product}” isn’t in one of this bundle type’s component sources.' => '“{product}” isn’t in one of this bundle type’s component sources.',
+    'Which sources can bundle components be picked from?' => 'Which sources can bundle components be picked from?',
+    'Enable versioning for bundles of this type' => 'Enable versioning for bundles of this type',
+    'Whether a revision is saved each time a bundle of this type is saved, so earlier versions can be viewed and reverted to.' => 'Whether a revision is saved each time a bundle of this type is saved, so earlier versions can be viewed and reverted to.',
+    'Add at least one product to the bundle.' => 'Add at least one product to the bundle.',
+    'This product has been deleted. Restore it, or remove it from the bundle.' => 'This product has been deleted. Restore it, or remove it from the bundle.',
+    'Each product can only be added once. Use Qty to include more than one.' => 'Each product can only be added once. Use Qty to include more than one.',
     'The products included in this bundle. Customers choose a variant for each at checkout.' => 'The products included in this bundle. Customers choose a variant for each at checkout.',
     'Bundle created.' => 'Bundle created.',
     'Couldn’t create bundle.' => 'Couldn’t create bundle.',
@@ -98,6 +123,10 @@ return [
     // =========================================================================
     'Manage “{type}” bundles' => 'Manage “{type}” bundles',
 
+    // GraphQL
+    // =========================================================================
+    'Query for bundles in the “{name}” bundle type' => 'Query for bundles in the “{name}” bundle type',
+
     // Cart / orders
     // =========================================================================
     '“{product}” isn’t available in the requested quantity.' => '“{product}” isn’t available in the requested quantity.',
@@ -106,4 +135,13 @@ return [
     // Jobs
     // =========================================================================
     'Recalculating bundle prices' => 'Recalculating bundle prices',
+    'Variants' => 'Variants',
+    'The variants customers can choose from.' => 'The variants customers can choose from.',
+    'All, including new ones' => 'All, including new ones',
+    'not for sale' => 'not for sale',
+    'Choose at least one variant of “{product}” that’s available for purchase.' => 'Choose at least one variant of “{product}” that’s available for purchase.',
+    'Only products can be bundle components, not drafts or revisions of them.' => 'Only products can be bundle components, not drafts or revisions of them.',
+    'User not authorized to manage bundles of this type.' => 'User not authorized to manage bundles of this type.',
+    'Couldn’t update the product row.' => 'Couldn’t update the product row.',
+    'Product moved to position {position} of {total}.' => 'Product moved to position {position} of {total}.',
 ];

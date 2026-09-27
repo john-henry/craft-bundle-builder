@@ -12,20 +12,22 @@ use craft\commerce\helpers\Currency;
 use craft\fieldlayoutelements\BaseNativeField;
 use craft\helpers\Cp;
 use craft\helpers\Html;
+use craft\helpers\Json;
+use craft\web\twig\TemplateLoaderException;
+use johnhenry\bundlebuilder\assets\BundleEditorAsset;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\enums\DiscountType;
 use johnhenry\bundlebuilder\enums\PricingStrategy;
 use yii\base\InvalidArgumentException;
+use yii\base\InvalidConfigException;
 
 /**
  * Bundle pricing field.
  *
- * A mandatory native field-layout element that renders the bundle's pricing
- * controls: the pricing strategy (fixed or automatic), the fixed base and
- * promotional prices (as store-currency money inputs), and the automatic
- * discount type/amount. Each input posts back to the matching bundle attribute.
+ * Mandatory native field for the bundle's pricing: strategy, fixed base and
+ * promotional prices, and the automatic discount type and amount.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundlePricingField extends BaseNativeField
@@ -52,10 +54,13 @@ class BundlePricingField extends BaseNativeField
      * @param ElementInterface|null $element The element being edited.
      * @param bool $static Whether the field should be static (read-only).
      * @return string|null The input HTML.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidArgumentException If the element is not a bundle.
+     * @throws TemplateLoaderException
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function inputHtml(ElementInterface $element = null, bool $static = false): ?string
+    public function inputHtml(?ElementInterface $element = null, bool $static = false): ?string
     {
         if (!$element instanceof Bundle) {
             throw new InvalidArgumentException(static::class . ' can only be used in bundle field layouts.');
@@ -63,12 +68,14 @@ class BundlePricingField extends BaseNativeField
 
         $view = Craft::$app->getView();
         $currency = $element->getStore()->getCurrency();
+
+        // Hide the inactive inputs in the markup itself, so they don't flash up
+        // before the script runs; the script only handles changes.
+        $isAutomatic = $element->pricingStrategy === PricingStrategy::Automatic->value;
         $currencyCode = $currency->getCode();
 
-        // The visible label is suppressed (blank) since this select sits directly
-        // under the field layout's own "Pricing" label; a second "Strategy"
-        // label right beneath it just reads as a duplicated heading. The
-        // accessible name is preserved via an explicit aria-label instead.
+        // No visible label, as the field's own "Pricing" label sits right above;
+        // aria-label keeps the accessible name.
         $strategyHtml = Cp::selectFieldHtml([
             'label' => '__blank__',
             'id' => 'pricingStrategy',
@@ -77,6 +84,7 @@ class BundlePricingField extends BaseNativeField
             'disabled' => $static,
             'inputAttributes' => [
                 'aria' => ['label' => Craft::t('bundle-builder', 'Strategy')],
+                'data' => ['pricing-strategy' => true],
             ],
             'options' => [
                 ['value' => PricingStrategy::Fixed->value, 'label' => Craft::t('bundle-builder', 'Fixed price')],
@@ -107,12 +115,12 @@ class BundlePricingField extends BaseNativeField
                     'size' => 12,
                     'errors' => $element->getErrors('basePromotionalPrice'),
                 ]), [
-                    'id' => 'promotional-price',
+                    'id' => 'base-promotional-price',
                     'label' => Craft::t('bundle-builder', 'Promotional Price'),
                 ]),
                 ['class' => 'flex'],
             ),
-            ['data-pricing' => 'fixed'],
+            ['data-pricing' => 'fixed', 'class' => $isAutomatic ? 'hidden' : null],
         );
 
         $automaticHtml = Html::tag('div',
@@ -136,25 +144,16 @@ class BundlePricingField extends BaseNativeField
                 'disabled' => $static,
                 'size' => 10,
             ]),
-            ['data-pricing' => 'automatic'],
+            ['data-pricing' => 'automatic', 'class' => $isAutomatic ? null : 'hidden'],
         );
 
-        $view->registerJs(<<<JS
-(function() {
-    var strategy = document.getElementById('pricingStrategy');
-    function togglePricing() {
-        document.querySelectorAll('[data-pricing]').forEach(function(el) {
-            el.classList.toggle('hidden', el.getAttribute('data-pricing') !== strategy.value);
-        });
-    }
-    if (strategy) {
-        strategy.addEventListener('change', togglePricing);
-        togglePricing();
-    }
-})();
-JS, $view::POS_END);
+        $view->registerAssetBundle(BundleEditorAsset::class);
+        $view->registerJs(sprintf(
+            'new Craft.BundleBuilder.PricingInput(%s);',
+            Json::htmlEncode('#' . $view->namespaceInputId('bundle-pricing')),
+        ));
 
-        return $strategyHtml . $fixedHtml . $automaticHtml;
+        return Html::tag('div', $strategyHtml . $fixedHtml . $automaticHtml, ['id' => 'bundle-pricing']);
     }
 
     // Protected Methods
@@ -166,7 +165,7 @@ JS, $view::POS_END);
      * @param ElementInterface|null $element The element being edited.
      * @param bool $static Whether the field is static.
      * @return string|null The default label.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function defaultLabel(?ElementInterface $element = null, bool $static = false): ?string
@@ -181,9 +180,9 @@ JS, $view::POS_END);
      * Returns a money value formatted for display, unless the attribute has errors.
      *
      * @param float|null $value The raw money value.
-     * @param array $errors Any validation errors on the attribute.
+     * @param string[] $errors Any validation errors on the attribute.
      * @return float|string|null The display value.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _money(?float $value, array $errors): float|string|null

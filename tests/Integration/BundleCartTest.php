@@ -10,7 +10,9 @@
 
 use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
+use craft\helpers\StringHelper;
 use johnhenry\bundlebuilder\BundleBuilder;
+use johnhenry\bundlebuilder\elements\Bundle;
 
 /**
  * Builds a LineItem carrying the given bundle component selections in its
@@ -35,13 +37,13 @@ function bundleLineItem(array $selections): LineItem
 // ---------------------------------------------------------------------------
 
 describe('BundleCart::applyToLineItem()', function () {
-    it('writes readable options and a snapshot of the chosen variants', function () {
+    it('leaves the posted options alone and snapshots the chosen variants', function () {
         $product = makeProduct(10.0);
         $bundle = bundleWithComponents([['product' => $product, 'qty' => 2]]);
 
         $lineItem = new LineItem();
         $lineItem->qty = 1;
-        $lineItem->setOptions([]);
+        $lineItem->setOptions(['giftNote' => 'Happy birthday']);
         $lineItem->setSnapshot([]);
 
         BundleBuilder::getInstance()->getBundleCart()->applyToLineItem($bundle, $lineItem);
@@ -49,56 +51,13 @@ describe('BundleCart::applyToLineItem()', function () {
         $variant = Commerce::getInstance()->getProducts()
             ->getProductById($product->id)?->getDefaultVariant();
 
-        expect($lineItem->getOptions())->toHaveKey($product->title);
+        expect($lineItem->getOptions())->toBe(['giftNote' => 'Happy birthday']);
 
         $selections = BundleBuilder::getInstance()->getBundleCart()->getSelections($lineItem);
         expect($selections)->toHaveCount(1);
         expect($selections[0]['productId'])->toBe((int)$product->id);
         expect($selections[0]['variantId'])->toBe((int)$variant?->id);
         expect($selections[0]['qty'])->toBe(2);
-    });
-
-    it('adds a stock error when a tracked component is short', function () {
-        $product = makeProduct(10.0, stock: 1);
-        $bundle = bundleWithComponents([['product' => $product, 'qty' => 5]]);
-
-        $lineItem = new LineItem();
-        $lineItem->qty = 1;
-        $lineItem->setOptions([]);
-        $lineItem->setSnapshot([]);
-
-        BundleBuilder::getInstance()->getBundleCart()->applyToLineItem($bundle, $lineItem);
-
-        expect($lineItem->getErrors('options'))->not->toBeEmpty();
-    });
-
-    it('does not add a stock error when stock is sufficient', function () {
-        $product = makeProduct(10.0, stock: 10);
-        $bundle = bundleWithComponents([['product' => $product, 'qty' => 2]]);
-
-        $lineItem = new LineItem();
-        $lineItem->qty = 1;
-        $lineItem->setOptions([]);
-        $lineItem->setSnapshot([]);
-
-        BundleBuilder::getInstance()->getBundleCart()->applyToLineItem($bundle, $lineItem);
-
-        expect($lineItem->getErrors('options'))->toBeEmpty();
-    });
-
-    it('multiplies the required stock by the line item quantity', function () {
-        // 3 per bundle × 2 bundles = 6 needed, only 5 in stock → short.
-        $product = makeProduct(10.0, stock: 5);
-        $bundle = bundleWithComponents([['product' => $product, 'qty' => 3]]);
-
-        $lineItem = new LineItem();
-        $lineItem->qty = 2;
-        $lineItem->setOptions([]);
-        $lineItem->setSnapshot([]);
-
-        BundleBuilder::getInstance()->getBundleCart()->applyToLineItem($bundle, $lineItem);
-
-        expect($lineItem->getErrors('options'))->not->toBeEmpty();
     });
 });
 
@@ -156,3 +115,116 @@ describe('BundleCart::decrementComponentStock()', function () {
         expect(true)->toBeTrue();
     });
 });
+
+// ---------------------------------------------------------------------------
+// getStockErrors(): counted across the whole order
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a populated bundle line item for the given bundle and quantity.
+ */
+function bundleCartLine(Bundle $bundle, int $qty): LineItem
+{
+    $lineItem = new LineItem();
+    $lineItem->qty = $qty;
+    $lineItem->setOptions([]);
+    $lineItem->setSnapshot([]);
+    $lineItem->setPurchasable($bundle);
+
+    BundleBuilder::getInstance()->getBundleCart()->applyToLineItem($bundle, $lineItem);
+
+    return $lineItem;
+}
+
+describe('BundleCart::getStockErrors()', function () {
+    it('reports a tracked component that is short', function () {
+        $bundle = bundleWithComponents([['product' => makeProduct(10.0, stock: 1), 'qty' => 5]]);
+        $lineItem = bundleCartLine($bundle, 1);
+        orderWithLineItems([$lineItem]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($lineItem))->toHaveCount(1);
+    });
+
+    it('reports nothing when stock is sufficient', function () {
+        $bundle = bundleWithComponents([['product' => makeProduct(10.0, stock: 10), 'qty' => 2]]);
+        $lineItem = bundleCartLine($bundle, 1);
+        orderWithLineItems([$lineItem]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($lineItem))->toBe([]);
+    });
+
+    it('multiplies the required stock by the line item quantity', function () {
+        // 3 per bundle × 2 bundles = 6 needed, only 5 in stock.
+        $bundle = bundleWithComponents([['product' => makeProduct(10.0, stock: 5), 'qty' => 3]]);
+        $lineItem = bundleCartLine($bundle, 2);
+        orderWithLineItems([$lineItem]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($lineItem))->toHaveCount(1);
+    });
+
+    it('counts the same variant across every line in the order', function () {
+        // 3 + 3 across two bundle lines = 6 needed, only 5 in stock; either
+        // line alone would fit.
+        $product = makeProduct(10.0, stock: 5);
+        $first = bundleCartLine(bundleWithComponents([['product' => $product, 'qty' => 3]]), 1);
+        $second = bundleCartLine(bundleWithComponents([['product' => $product, 'qty' => 3]]), 1);
+        orderWithLineItems([$first, $second]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($first))->toHaveCount(1);
+    });
+
+    it('reports nothing when the component allows out-of-stock purchases', function () {
+        $product = makeProduct(10.0, stock: 0, allowOutOfStockPurchases: true);
+        $lineItem = bundleCartLine(bundleWithComponents([['product' => $product, 'qty' => 2]]), 1);
+        orderWithLineItems([$lineItem]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($lineItem))->toBe([]);
+    });
+
+    it('fails line item validation when a component is short', function () {
+        $bundle = makeSavedBundle(makeBundleType('Short', 'short' . StringHelper::randomString(6)), [
+            ['product' => makeProduct(10.0, stock: 1), 'qty' => 5],
+        ]);
+        $lineItem = bundleCartLine($bundle, 1);
+        $lineItem->purchasableId = $bundle->id;
+        orderWithLineItems([$lineItem]);
+
+        $lineItem->validate();
+
+        expect(implode(' ', $lineItem->getErrors('qty')))->toContain('isn’t available in the requested quantity');
+    });
+});
+
+describe('BundleCart::getStockErrors() after the variants change', function () {
+    it('checks the newly chosen variant, not the one in the snapshot', function () {
+        $product = makeProduct(10.0, stock: 10);
+        $soldOut = addVariant($product, 10.0, stock: 0);
+        $bundle = makeSavedBundle(makeBundleType('Switch ' . StringHelper::randomString(6), 'switch' . StringHelper::randomString(6)), [
+            ['product' => $product, 'qty' => 1],
+        ]);
+
+        // The snapshot has the in-stock default; a cart update then posts the
+        // sold-out variant, validated before the snapshot is rebuilt
+        $lineItem = bundleCartLine($bundle, 1);
+        $lineItem->setOptions(['bundleProducts' => [$product->id => (string)$soldOut->id]]);
+        orderWithLineItems([$lineItem]);
+
+        expect(BundleBuilder::getInstance()->getBundleCart()->getStockErrors($lineItem))->toHaveCount(1);
+    });
+});
+
+describe('BundleCart::decrementComponentStock() with tracked stock', function () {
+    it('takes the components’ stock from what’s available', function () {
+        $product = makeProduct(10.0, stock: 10);
+        $bundle = makeSavedBundle(makeBundleType('Commit ' . StringHelper::randomString(6), 'commit' . StringHelper::randomString(6)), [
+            ['product' => $product, 'qty' => 2],
+        ]);
+        $lineItem = bundleCartLine($bundle, 3);
+
+        BundleBuilder::getInstance()->getBundleCart()->decrementComponentStock($lineItem);
+
+        $variant = Commerce::getInstance()->getProducts()->getProductById($product->id)?->getDefaultVariant();
+        expect($variant->getStock())->toBe(4);
+    });
+});
+

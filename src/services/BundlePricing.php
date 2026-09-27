@@ -9,21 +9,29 @@ namespace johnhenry\bundlebuilder\services;
 use Craft;
 use craft\base\Component;
 use craft\commerce\elements\Product;
+use craft\commerce\elements\Variant;
+use craft\commerce\helpers\Currency;
+use craft\db\Table;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\enums\DiscountType;
 use johnhenry\bundlebuilder\enums\PricingStrategy;
+use johnhenry\bundlebuilder\jobs\RecalculateBundlePrices;
 use johnhenry\bundlebuilder\models\BundleProduct;
 use johnhenry\bundlebuilder\records\BundleProductRecord;
+use Throwable;
+use yii\base\InvalidConfigException;
 
 /**
  * Bundle pricing service.
  *
- * Computes a bundle's price for the automatic pricing strategy: the summed sale
- * price of its components, less a percentage or flat discount, and recalculates
- * automatically priced bundles when a component product is saved, deleted or
- * restored.
+ * Automatic bundle pricing: the summed sale price of the components, less a
+ * percentage or flat discount. The stored price uses each component's default
+ * variant; the cart adjusts it for the variants the customer actually chose,
+ * so a dearer variant costs more and a cheaper one less.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @phpstan-type PriceRange array{min: float, max: float}
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundlePricing extends Component
@@ -32,15 +40,14 @@ class BundlePricing extends Component
     // =========================================================================
 
     /**
-     * Returns the summed sale price of a bundle's components, each multiplied by
-     * its quantity, so a component currently on sale or covered by a catalog
-     * pricing rule is reflected in the bundle's automatic price. Batch-loads
-     * every component product in one query rather than letting each
-     * {@see BundleProduct::getProduct()} call hit the database individually.
+     * Returns the summed sale price of a bundle's components, each at its
+     * default variant and multiplied by its quantity. Loads every component
+     * product in one query.
      *
      * @param Bundle $bundle The bundle to total.
      * @return float The components subtotal.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getComponentsSubtotal(Bundle $bundle): float
@@ -56,7 +63,9 @@ class BundlePricing extends Component
             $bundleProducts,
         ))));
 
-        $products = Product::find()->id($productIds)->indexBy('id')->all();
+        // Include disabled products: a disabled component still ships in the
+        // bundle, and getProductById() elsewhere ignores status too.
+        $products = Product::find()->id($productIds)->siteId($bundle->siteId)->status(null)->indexBy('id')->all();
 
         $subtotal = 0.0;
 
@@ -64,23 +73,40 @@ class BundlePricing extends Component
             $product = $products[$bundleProduct->productId] ?? null;
 
             if (!$product) {
+                Craft::warning(
+                    "Bundle {$bundle->id} lists product {$bundleProduct->productId}, which could not be found; "
+                    . 'its price is not included in the bundle total.',
+                    'bundle-builder',
+                );
                 continue;
             }
 
-            $subtotal += $this->getComponentPrice($product) * $bundleProduct->qty;
+            $bundleProduct->setProduct($product);
+
+            if (!$bundleProduct->getDefaultVariant()) {
+                Craft::warning(
+                    "Bundle {$bundle->id}'s component product {$bundleProduct->productId} has no variant a customer can buy; "
+                    . 'its price is not included in the bundle total.',
+                    'bundle-builder',
+                );
+                continue;
+            }
+
+            $subtotal += $this->getComponentUnitPrice($bundleProduct) * $bundleProduct->qty;
         }
 
         return $subtotal;
     }
 
     /**
-     * Returns the price used when totalling a component: its default variant's
-     * sale price (its promotional/catalog-pricing-rule price if one applies,
-     * otherwise its regular price).
+     * Returns a product's default variant's sale price, which takes
+     * promotional and catalog pricing into account.
      *
      * @param Product $product The component product.
      * @return float The component's unit price.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @deprecated in 1.2.0. Use {@see getComponentUnitPrice()}, which respects the variants a component offers.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getComponentPrice(Product $product): float
@@ -91,12 +117,146 @@ class BundlePricing extends Component
     }
 
     /**
+     * Returns a component's unit price: the sale price of the variant chosen
+     * when the customer doesn't pick one.
+     *
+     * @param BundleProduct $bundleProduct The component.
+     * @return float The component's unit price.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getComponentUnitPrice(BundleProduct $bundleProduct): float
+    {
+        return (float)($bundleProduct->getDefaultVariant()?->getSalePrice() ?? 0);
+    }
+
+    /**
+     * Returns how much choosing a variant changes an automatic bundle's price:
+     * the difference from the component's default variant, times the
+     * component's quantity, less the bundle's percentage discount. A fixed
+     * price bundle doesn't change, so this is always zero for one, as it is
+     * for a variant the component doesn't offer.
+     *
+     * @param Bundle $bundle The bundle.
+     * @param BundleProduct $bundleProduct The component.
+     * @param Variant $variant The chosen variant.
+     * @return float The change in the bundle's price, unrounded.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getVariantAdjustment(Bundle $bundle, BundleProduct $bundleProduct, Variant $variant): float
+    {
+        if ($bundle->pricingStrategy !== PricingStrategy::Automatic->value) {
+            return 0.0;
+        }
+
+        return $this->_variantAdjustment($bundle, $bundleProduct, $variant, $this->getComponentUnitPrice($bundleProduct));
+    }
+
+    /**
+     * Returns how much a set of chosen variants changes a bundle's price: each
+     * component's {@see getVariantAdjustment()}, rounded to the store currency
+     * as it's shown next to the variant, then summed, so the charge matches
+     * what the shopper saw add up. A flat discount bigger than the components
+     * holds the price at 0 until a choice lifts it above. Choices for variants
+     * a component doesn't offer are ignored.
+     *
+     * @param Bundle $bundle The bundle.
+     * @param array<int, array{productId?: int, variantId?: int}> $selections The chosen variant for each component.
+     * @return float The change in the bundle's price.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getSelectionsAdjustment(Bundle $bundle, array $selections): float
+    {
+        if ($bundle->pricingStrategy !== PricingStrategy::Automatic->value) {
+            return 0.0;
+        }
+
+        $chosen = [];
+
+        foreach ($selections as $selection) {
+            $chosen[(int)($selection['productId'] ?? 0)] = (int)($selection['variantId'] ?? 0);
+        }
+
+        $currency = $bundle->getStore()->getCurrency();
+        $adjustment = 0.0;
+
+        foreach ($bundle->getProducts() as $bundleProduct) {
+            $variantId = $chosen[(int)$bundleProduct->productId] ?? null;
+
+            foreach ($variantId ? $bundleProduct->getVariants() : [] as $variant) {
+                if ((int)$variant->id === $variantId) {
+                    $adjustment += Currency::round($this->getVariantAdjustment($bundle, $bundleProduct, $variant), $currency);
+                    break;
+                }
+            }
+        }
+
+        // A flat discount bigger than the components floors the price at 0,
+        // so only the part of a dearer choice that lifts it above 0 is charged
+        if ($bundle->discountType === DiscountType::Flat->value && $adjustment !== 0.0) {
+            $subtotal = $this->getComponentsSubtotal($bundle);
+            $discount = (float)($bundle->discountAmount ?? 0);
+            $adjustment = max(0.0, $subtotal + $adjustment - $discount) - max(0.0, $subtotal - $discount);
+        }
+
+        return Currency::round($adjustment, $currency);
+    }
+
+    /**
+     * Returns the lowest and highest a bundle's sale price can be across the
+     * variants its components offer. The same for both on a fixed price
+     * bundle, or when every component's variants cost the same.
+     *
+     * @param Bundle $bundle The bundle.
+     * @return PriceRange The price range.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getPriceRange(Bundle $bundle): array
+    {
+        $price = (float)$bundle->getSalePrice();
+
+        if ($bundle->pricingStrategy !== PricingStrategy::Automatic->value) {
+            return ['min' => $price, 'max' => $price];
+        }
+
+        $currency = $bundle->getStore()->getCurrency();
+        $min = $max = 0.0;
+
+        foreach ($bundle->getProducts() as $bundleProduct) {
+            $defaultPrice = $this->getComponentUnitPrice($bundleProduct);
+            $adjustments = array_map(
+                fn(Variant $variant): float => Currency::round($this->_variantAdjustment($bundle, $bundleProduct, $variant, $defaultPrice), $currency),
+                $bundleProduct->getVariants(),
+            );
+
+            if ($adjustments) {
+                $min += min($adjustments);
+                $max += max($adjustments);
+            }
+        }
+
+        return [
+            'min' => max(0.0, Currency::round($price + $min, $currency)),
+            'max' => max(0.0, Currency::round($price + $max, $currency)),
+        ];
+    }
+
+    /**
      * Calculates a bundle's automatic price: the components subtotal less the
-     * configured discount, floored at zero.
+     * configured discount, rounded to the store currency's minor unit and
+     * floored at zero.
      *
      * @param Bundle $bundle The bundle to price.
      * @return float The calculated price.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function calculatePrice(Bundle $bundle): float
@@ -110,23 +270,25 @@ class BundlePricing extends Component
             default => $subtotal,
         };
 
-        return max(0.0, round($price, 2));
+        return max(0.0, Currency::round($price, $bundle->getStore()->getCurrency()));
     }
 
     /**
-     * Returns the IDs of every bundle that lists the given product as a
-     * component.
+     * Returns the IDs of every bundle, not counting revisions, that lists the
+     * given product as a component.
      *
      * @param int $productId The component product's ID.
      * @return int[] The bundle IDs.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleIdsForProduct(int $productId): array
     {
+        // Revisions keep their own component rows; only live bundles count.
         $bundleIds = BundleProductRecord::find()
-            ->select(['bundleId'])
-            ->where(['productId' => $productId])
+            ->select(['bundlebuilder_products.bundleId'])
+            ->innerJoin(['elements' => Table::ELEMENTS], '[[elements.id]] = [[bundlebuilder_products.bundleId]]')
+            ->where(['bundlebuilder_products.productId' => $productId, 'elements.revisionId' => null])
             ->column();
 
         return array_values(array_unique(array_map('intval', $bundleIds)));
@@ -138,8 +300,8 @@ class BundlePricing extends Component
      *
      * @param Bundle $bundle The bundle to recalculate.
      * @return void
-     * @throws \Throwable if the bundle can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Throwable if the bundle can't be saved.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function recalculateBundle(Bundle $bundle): void
@@ -148,21 +310,21 @@ class BundlePricing extends Component
             return;
         }
 
-        // Re-saving recomputes the stored base price via the element's
-        // beforeSave() hook.
+        // Bundle::beforeSave() recomputes the price. Flagged as a resave, so a
+        // component's price change doesn't add a revision to every bundle.
+        $bundle->resaving = true;
         Craft::$app->getElements()->saveElement($bundle, false);
     }
 
     /**
-     * Recalculates the stored price of every automatically priced bundle that
-     * contains the given product. For a component used across a lot of bundles,
-     * prefer queueing {@see RecalculateBundlePrices}, which does the same work
-     * in batches.
+     * Recalculates every automatically priced bundle containing the given
+     * product. For a widely used component, queue {@see RecalculateBundlePrices}
+     * instead, which batches the work.
      *
      * @param int $productId The component product's ID.
      * @return void
-     * @throws \Throwable if a bundle can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Throwable if a bundle can't be saved.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function recalculateBundlesForProduct(int $productId): void
@@ -181,5 +343,52 @@ class BundlePricing extends Component
         foreach ($bundles as $bundle) {
             $this->recalculateBundle($bundle);
         }
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * Returns the share of a component price change that reaches an automatic
+     * bundle's price: all of it, less the bundle's percentage discount if it
+     * has one. A flat discount doesn't scale with the components.
+     *
+     * @param Bundle $bundle The bundle.
+     * @return float The factor, between 0 and 1.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _discountFactor(Bundle $bundle): float
+    {
+        if ($bundle->discountType !== DiscountType::Percentage->value) {
+            return 1.0;
+        }
+
+        return max(0.0, 1 - ((float)($bundle->discountAmount ?? 0) / 100));
+    }
+
+    /**
+     * The adjustment for a variant against an already-known default price, so
+     * a caller pricing every variant looks the default up once. Zero for a
+     * variant the component doesn't offer.
+     *
+     * @param Bundle $bundle The bundle.
+     * @param BundleProduct $bundleProduct The component.
+     * @param Variant $variant The variant.
+     * @param float $defaultPrice The component's default variant's sale price.
+     * @return float The change in the bundle's price, unrounded.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _variantAdjustment(Bundle $bundle, BundleProduct $bundleProduct, Variant $variant, float $defaultPrice): float
+    {
+        if ((int)$variant->getPrimaryOwnerId() !== (int)$bundleProduct->productId || !$bundleProduct->allowsVariant((int)$variant->id)) {
+            return 0.0;
+        }
+
+        $difference = (float)($variant->getSalePrice() ?? 0) - $defaultPrice;
+
+        return $difference * $bundleProduct->qty * $this->_discountFactor($bundle);
     }
 }

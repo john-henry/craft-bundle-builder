@@ -1,24 +1,57 @@
-{# ============================================================================
- # Bundle component row
- # A single product + quantity row in the bundle editor's component picker.
- # Shared by the edit form (server-rendered) and the AJAX "add" endpoint.
- # ========================================================================== #}
 {% import '_includes/forms' as forms %}
 
 {% set product = bundleProduct.product ?? null %}
+{% set rowNumber = index + 1 %}
+{% set rowActionLabel = "#{'Row {index}'|t('app', {index: rowNumber})} #{'Actions'|t('app')}" %}
+{% set rowMoveItems = [
+    { icon: 'arrow-up', label: 'Move up'|t('app'), attributes: { data: { action: 'moveUp' } } },
+    { icon: 'arrow-down', label: 'Move down'|t('app'), attributes: { data: { action: 'moveDown' } } },
+] %}
 
-<div class="bundle-product-row" data-index="{{ index }}">
+<div class="bundle-product-row" data-index="{{ index }}" data-product-id="{{ product.id ?? '' }}">
     <div class="bundle-product-cell bundle-product-cell--handle">
-        <a class="move icon" title="{{ 'Reorder'|t('app') }}" aria-label="{{ 'Reorder'|t('app') }}" role="button"></a>
+        <div class="flex flex-nowrap">
+            <a class="move icon" title="{{ 'Reorder'|t('app') }}" aria-hidden="true"></a>
+            {{ disclosureMenu(rowMoveItems, {
+                buttonAttributes: {
+                    'aria-label': rowActionLabel,
+                    class: ['action-btn'],
+                    title: 'Actions'|t('app'),
+                },
+            }) }}
+        </div>
     </div>
     <div class="bundle-product-cell bundle-product-cell--product">
-        {{ forms.elementSelect({
-            name: 'products[' ~ index ~ '][productId]',
-            elementType: 'craft\\commerce\\elements\\Product',
-            sources: '*',
-            limit: 1,
-            elements: product ? [product] : [],
-        }) }}
+        {% if bundleProduct and bundleProduct.productId and not product %}
+            {{ hiddenInput('products[' ~ index ~ '][productId]', bundleProduct.productId) }}
+            <p class="error">{{ 'This product has been deleted. Restore it, or remove it from the bundle.'|t('bundle-builder') }}</p>
+        {% else %}
+            {{ forms.elementSelect({
+                name: 'products[' ~ index ~ '][productId]',
+                elementType: 'craft\\commerce\\elements\\Product',
+                sources: componentSources ?? '*',
+                limit: 1,
+                elements: product ? [product] : [],
+                disabledElementIds: disabledProductIds ?? [],
+            }) }}
+            {% set variants = product ? product.getVariants() : [] %}
+            {% if variants|length > 1 %}
+                <div class="bundle-product-variants">
+                    {{ forms.checkboxSelectField({
+                        label: 'Variants'|t('bundle-builder'),
+                        instructions: 'The variants customers can choose from.'|t('bundle-builder'),
+                        name: 'products[' ~ index ~ '][variantIds]',
+                        showAllOption: true,
+                        allLabel: 'All, including new ones'|t('bundle-builder'),
+                        options: variants|map(variant => {
+                            label: variant.title ~ ' (' ~ variant.salePriceAsCurrency ~ ')' ~ (variant.availableForPurchase ? '' : ' · ' ~ 'not for sale'|t('bundle-builder')),
+                            value: variant.id,
+                        })|values,
+                        values: bundleProduct.variantIds ?? '*',
+                    }) }}
+                </div>
+            {% endif %}
+        {% endif %}
     </div>
     <div class="bundle-product-cell bundle-product-cell--qty">
         {{ forms.text({
@@ -33,6 +66,6 @@
         }) }}
     </div>
     <div class="bundle-product-cell bundle-product-cell--delete">
-        <a class="delete icon bundle-product-remove" title="{{ 'Remove'|t('app') }}" aria-label="{{ 'Remove'|t('app') }}" role="button"></a>
+        <a class="delete icon bundle-product-remove" title="{{ 'Remove'|t('app') }}" aria-label="{{ 'Remove'|t('app') }}" role="button" tabindex="0"></a>
     </div>
 </div>

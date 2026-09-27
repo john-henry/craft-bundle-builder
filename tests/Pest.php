@@ -15,13 +15,20 @@
  *     --test-directory=plugins/craft-bundle-builder/tests
  */
 
+use craft\commerce\elements\Order;
 use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
+use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
 use craft\db\Query;
 use craft\helpers\StringHelper;
+use craft\models\GqlSchema;
+use craft\services\Gql as GqlService;
 use johnhenry\bundlebuilder\BundleBuilder;
+use johnhenry\bundlebuilder\elements\Bundle;
+use johnhenry\bundlebuilder\enums\PricingStrategy;
 use johnhenry\bundlebuilder\enums\TaxTreatment;
+use johnhenry\bundlebuilder\helpers\Gql as GqlHelper;
 use johnhenry\bundlebuilder\models\BundleType;
 use johnhenry\bundlebuilder\records\BundleTypeRecord;
 use markhuot\craftpest\test\RefreshesDatabase;
@@ -95,17 +102,24 @@ function makeBundleType(
 
 /**
  * Creates a saved Commerce product with a single default variant at the given
- * base price, reusing whichever product type already exists in the test
- * database. The RefreshesDatabase transaction rolls the product back on
+ * base price, in the given product type or the first one in the test database. The RefreshesDatabase transaction rolls the product back on
  * teardown.
  *
  * @param float $basePrice The default variant's base price.
  * @param int|null $stock The default variant's tracked stock, or null for untracked.
  * @param float|null $promotionalPrice The default variant's promotional (sale) price, or null for none.
+ * @param bool $allowOutOfStockPurchases Whether the default variant allows out-of-stock purchases.
+ * @param int|null $typeId The product type ID, or null for the first product type.
  */
-function makeProduct(float $basePrice = 10.0, ?int $stock = null, ?float $promotionalPrice = null): Product
+function makeProduct(
+    float $basePrice = 10.0,
+    ?int $stock = null,
+    ?float $promotionalPrice = null,
+    bool $allowOutOfStockPurchases = false,
+    ?int $typeId = null,
+): Product
 {
-    $typeId = (int)(new Query())
+    $typeId ??= (int)(new Query())
         ->select('id')
         ->from('{{%commerce_producttypes}}')
         ->orderBy(['id' => SORT_ASC])
@@ -117,7 +131,7 @@ function makeProduct(float $basePrice = 10.0, ?int $stock = null, ?float $promot
 
     $elementsService = Craft::$app->getElements();
 
-    return withFileCacheWarningsSuppressed(static function () use ($elementsService, $typeId, $basePrice, $stock, $promotionalPrice): Product {
+    return withFileCacheWarningsSuppressed(static function () use ($elementsService, $typeId, $basePrice, $stock, $promotionalPrice, $allowOutOfStockPurchases): Product {
         $product = new Product();
         $product->typeId = $typeId;
         $product->title = 'Test Component ' . StringHelper::randomString(6);
@@ -138,6 +152,7 @@ function makeProduct(float $basePrice = 10.0, ?int $stock = null, ?float $promot
         $variant->sku = 'BB-TEST-' . StringHelper::UUID();
         $variant->setBasePrice($basePrice);
         $variant->inventoryTracked = $stock !== null;
+        $variant->allowOutOfStockPurchases = $allowOutOfStockPurchases;
 
         if ($promotionalPrice !== null) {
             $variant->setBasePromotionalPrice($promotionalPrice);
@@ -163,18 +178,49 @@ function makeProduct(float $basePrice = 10.0, ?int $stock = null, ?float $promot
 }
 
 /**
+ * Adds a non-default variant to a product, optionally with tracked stock.
+ * Rolled back with the test transaction.
+ *
+ * @param Product $product The product.
+ * @param float $basePrice The variant's base price.
+ * @param int|null $stock The variant's tracked stock, or null for untracked.
+ */
+function addVariant(Product $product, float $basePrice, ?int $stock = null): Variant
+{
+    return withFileCacheWarningsSuppressed(static function () use ($product, $basePrice, $stock): Variant {
+        $variant = new Variant();
+        $variant->setPrimaryOwnerId($product->id);
+        $variant->setOwnerId($product->id);
+        $variant->isDefault = false;
+        $variant->sku = 'BB-TEST-' . StringHelper::UUID();
+        $variant->setBasePrice($basePrice);
+        $variant->inventoryTracked = $stock !== null;
+
+        if (!Craft::$app->getElements()->saveElement($variant, false)) {
+            throw new RuntimeException('Could not save test variant: ' . implode(', ', $variant->getErrorSummary(true)));
+        }
+
+        if ($stock !== null) {
+            ensureStoreHasInventoryLocation($variant->getStore()->id);
+            Commerce::getInstance()->getInventory()->updatePurchasableInventoryLevel($variant, $stock);
+        }
+
+        return $variant;
+    });
+}
+
+/**
  * Ensures the given store is linked to an inventory location, so stock set on a
  * purchasable in that store is visible via getStock(). The boilerplate test
  * database links its single Default location only to the secondary store, so
  * products created in the primary store would otherwise always read zero stock.
- * The inserted link is rolled back with the test transaction.
+ * Linked through Commerce's service rather than raw SQL, as Commerce memoizes
+ * each store's location IDs per request. Rolled back with the test transaction.
  *
  * @param int $storeId The store to link.
  */
 function ensureStoreHasInventoryLocation(int $storeId): void
 {
-    $db = Craft::$app->getDb();
-
     $alreadyLinked = (new Query())
         ->from('{{%commerce_inventorylocations_stores}}')
         ->where(['storeId' => $storeId])
@@ -194,15 +240,11 @@ function ensureStoreHasInventoryLocation(int $storeId): void
         throw new RuntimeException('No Commerce inventory location exists in the test database.');
     }
 
-    $now = date('Y-m-d H:i:s');
-    $db->createCommand()->insert('{{%commerce_inventorylocations_stores}}', [
-        'storeId' => $storeId,
-        'inventoryLocationId' => $locationId,
-        'sortOrder' => 1,
-        'dateCreated' => $now,
-        'dateUpdated' => $now,
-        'uid' => StringHelper::UUID(),
-    ])->execute();
+    $commerce = Commerce::getInstance();
+    $commerce->getInventoryLocations()->saveStoreInventoryLocations(
+        $commerce->getStores()->getStoreById($storeId),
+        [$locationId],
+    );
 }
 
 /**
@@ -245,4 +287,98 @@ function bundleWithComponents(array $components): \johnhenry\bundlebuilder\eleme
     ], $components));
 
     return $bundle;
+}
+
+/**
+ * Saves a bundle of the given type with the given component products, at the
+ * given pricing strategy. Rolled back with the test transaction.
+ *
+ * @param array<int, array{product: Product, qty: int}> $components
+ */
+function makeSavedBundle(
+    BundleType $type,
+    array $components,
+    string $pricingStrategy = PricingStrategy::Automatic->value,
+): Bundle {
+    return withFileCacheWarningsSuppressed(static function () use ($type, $components, $pricingStrategy): Bundle {
+        $bundle = new Bundle();
+        $bundle->typeId = $type->id;
+        $bundle->siteId = Craft::$app->getSites()->getPrimarySite()->id;
+        $bundle->title = 'Test Bundle ' . StringHelper::randomString(6);
+        $bundle->enabled = true;
+        $bundle->pricingStrategy = $pricingStrategy;
+        $bundle->setProducts(array_map(static fn(array $component): array => [
+            'productId' => $component['product']->id,
+            'qty' => $component['qty'],
+        ], $components));
+
+        if (!Craft::$app->getElements()->saveElement($bundle, false)) {
+            throw new RuntimeException('Could not save bundle: ' . implode(', ', $bundle->getErrorSummary(true)));
+        }
+
+        return $bundle;
+    });
+}
+
+/**
+ * Builds an unsaved order carrying the given line items, at the given
+ * currency, in the primary store.
+ *
+ * @param LineItem[] $lineItems
+ */
+function orderWithLineItems(array $lineItems, string $currency = 'USD'): Order
+{
+    $order = new Order();
+    $order->storeId = Commerce::getInstance()->getStores()->getPrimaryStore()->id;
+    $order->currency = $currency;
+    $order->setLineItems($lineItems);
+
+    return $order;
+}
+
+/**
+ * Builds a schema that can read the primary site, the given bundle types
+ * and, optionally, every product type.
+ *
+ * @param BundleType[] $bundleTypes
+ */
+function bundleGqlSchema(array $bundleTypes, bool $withProductTypes = true): GqlSchema
+{
+    $scope = ['sites.' . Craft::$app->getSites()->getPrimarySite()->uid . ':read'];
+
+    foreach ($bundleTypes as $bundleType) {
+        $scope[] = GqlHelper::SCOPE_BUNDLE_TYPES . '.' . $bundleType->uid . ':read';
+    }
+
+    if ($withProductTypes) {
+        foreach (Commerce::getInstance()->getProductTypes()->getAllProductTypes() as $productType) {
+            $scope[] = 'productTypes.' . $productType->uid . ':read';
+        }
+    }
+
+    return new GqlSchema(['name' => 'Bundle Builder test', 'scope' => $scope]);
+}
+
+/**
+ * Runs a GraphQL query against the schema from a clean GraphQL state. Craft
+ * memoizes the schema definition and every generated type for the whole
+ * process, so without a reset one schema's types would answer for the next.
+ * flushCaches() alone leaves two memos behind that hold types from before
+ * the flush: the service's field layout arguments, so the service is replaced,
+ * and Commerce's variant content arguments, so that memo is cleared.
+ *
+ * @return array<string, mixed>
+ */
+function runBundleGql(GqlSchema $schema, string $query): array
+{
+    Craft::$app->set('gql', new GqlService());
+    $gql = Craft::$app->getGql();
+    $gql->flushCaches();
+
+    $variants = Commerce::getInstance()->getVariants();
+    $memo = new \ReflectionProperty($variants, '_contentFieldCache');
+    $memo->setValue($variants, []);
+
+    // Debug mode, so validation errors come back instead of an empty result
+    return withFileCacheWarningsSuppressed(static fn(): array => $gql->executeQuery($schema, $query, debugMode: true));
 }

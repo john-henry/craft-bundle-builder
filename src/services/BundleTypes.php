@@ -8,9 +8,14 @@ namespace johnhenry\bundlebuilder\services;
 
 use Craft;
 use craft\base\Component;
+use craft\commerce\elements\Product;
 use craft\db\Query;
+use craft\elements\conditions\ElementConditionInterface;
 use craft\helpers\Db;
+use craft\helpers\ElementHelper;
 use craft\helpers\Json;
+use craft\services\ElementSources;
+use johnhenry\bundlebuilder\controllers\BundlesController;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\models\BundleType;
 use johnhenry\bundlebuilder\models\BundleTypeSite;
@@ -22,15 +27,14 @@ use yii\base\Exception;
 /**
  * Bundle types service.
  *
- * Reads, persists, and deletes {@see BundleType} models together with their
- * field layout and per-site URL settings. Results are memoized for the duration
- * of the request and reset whenever the underlying data changes.
- *
- * @author JohnHenry <info@johnhenry.ie>
- * @since 1.0.0
+ * Reads, saves and deletes {@see BundleType} models with their field layout and
+ * site settings. Results are memoized per request.
  *
  * @property-read BundleType[] $allBundleTypes
  * @property-read BundleType[] $editableBundleTypes
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class BundleTypes extends Component
 {
@@ -49,7 +53,7 @@ class BundleTypes extends Component
      * Returns every bundle type, ordered by name.
      *
      * @return BundleType[] The bundle types, indexed by ID.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getAllBundleTypes(): array
@@ -72,10 +76,11 @@ class BundleTypes extends Component
     }
 
     /**
-     * Returns the bundle types the given user (or the current user) can edit.
+     * Returns the bundle types the current user can edit.
      *
      * @return BundleType[] The editable bundle types, indexed by ID.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Throwable
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getEditableBundleTypes(): array
@@ -88,7 +93,7 @@ class BundleTypes extends Component
 
         return array_filter(
             $this->getAllBundleTypes(),
-            static fn(BundleType $bundleType): bool => $user->can("bundle-builder:manageBundles:{$bundleType->uid}")
+            static fn(BundleType $bundleType): bool => $user->can(BundlesController::PERMISSION_MANAGE_BUNDLES . ':' . $bundleType->uid)
         );
     }
 
@@ -97,7 +102,7 @@ class BundleTypes extends Component
      *
      * @param int $id The bundle type ID.
      * @return BundleType|null The bundle type, or null.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleTypeById(int $id): ?BundleType
@@ -110,7 +115,7 @@ class BundleTypes extends Component
      *
      * @param string $handle The bundle type handle.
      * @return BundleType|null The bundle type, or null.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleTypeByHandle(string $handle): ?BundleType
@@ -125,11 +130,59 @@ class BundleTypes extends Component
     }
 
     /**
+     * Returns which of the given products fall within any of the given product
+     * sources, applying each source the way Craft's element index does: a
+     * custom source's condition, then the source's criteria.
+     *
+     * @param int[] $productIds The product IDs to check.
+     * @param string|string[] $sources `*` for all sources, or a list of source keys.
+     * @return int[] The IDs that fall within a source.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    public function getProductIdsInSources(array $productIds, string|array $sources): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        if ($sources === '*') {
+            return Product::find()->id($productIds)->status(null)->ids();
+        }
+
+        $found = [];
+
+        foreach ((array)$sources as $sourceKey) {
+            $source = ElementHelper::findSource(Product::class, $sourceKey, ElementSources::CONTEXT_MODAL);
+
+            if ($source === null) {
+                continue;
+            }
+
+            $query = Product::find()->status(null);
+
+            if (($source['type'] ?? null) === ElementSources::TYPE_CUSTOM && isset($source['condition'])) {
+                /** @var array{class: class-string<ElementConditionInterface>} $config */
+                $config = $source['condition'];
+                Craft::$app->getConditions()->createCondition($config)->modifyQuery($query);
+            }
+
+            if (!empty($source['criteria'])) {
+                Craft::configure($query, $source['criteria']);
+            }
+
+            $found = [...$found, ...$query->id($productIds)->ids()];
+        }
+
+        return array_values(array_unique(array_map('intval', $found)));
+    }
+
+    /**
      * Returns the per-site settings for the given bundle type.
      *
      * @param int $bundleTypeId The bundle type ID.
      * @return BundleTypeSite[] The site settings.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleTypeSites(int $bundleTypeId): array
@@ -164,13 +217,11 @@ class BundleTypes extends Component
      * @param bool $runValidation Whether the bundle type should be validated.
      * @return bool Whether the bundle type was saved successfully.
      * @throws Throwable if the field layout or records can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function saveBundleType(BundleType $bundleType, bool $runValidation = true): bool
     {
-        // Bundle types live in the database; only the field layout syncs via
-        // project config, matching this project's other commerce plugins.
         if ($runValidation && !$bundleType->validate()) {
             return false;
         }
@@ -189,10 +240,11 @@ class BundleTypes extends Component
             $record->skuFormat = $bundleType->skuFormat;
             $record->descriptionFormat = $bundleType->descriptionFormat;
             $record->showSlugField = $bundleType->showSlugField;
+            $record->enableVersioning = $bundleType->enableVersioning;
+            $record->componentSources = Json::encode($bundleType->componentSources);
             $record->taxTreatment = $bundleType->taxTreatment;
             $record->previewTargets = $bundleType->previewTargets ? Json::encode(array_values($bundleType->previewTargets)) : null;
 
-            // Save the field layout
             $fieldLayout = $bundleType->getBundleFieldLayout();
             Craft::$app->getFields()->saveLayout($fieldLayout);
             $bundleType->fieldLayoutId = $fieldLayout->id;
@@ -213,6 +265,9 @@ class BundleTypes extends Component
 
         $this->_bundleTypes = null;
 
+        // Cached GraphQL results carry the type's handle and custom fields
+        Craft::$app->getGql()->invalidateCaches();
+
         return true;
     }
 
@@ -223,7 +278,7 @@ class BundleTypes extends Component
      * @param int $id The bundle type ID.
      * @return bool Whether a bundle type was deleted.
      * @throws Throwable if a bundle element can't be deleted.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function deleteBundleTypeById(int $id): bool
@@ -237,14 +292,12 @@ class BundleTypes extends Component
         $transaction = Craft::$app->getDb()->beginTransaction();
 
         try {
-            // Delete every bundle of this type
             $bundles = Bundle::find()->typeId($id)->status(null)->all();
             $elementsService = Craft::$app->getElements();
             foreach ($bundles as $bundle) {
                 $elementsService->deleteElement($bundle);
             }
 
-            // Delete the field layout
             if ($record->fieldLayoutId) {
                 Craft::$app->getFields()->deleteLayoutById($record->fieldLayoutId);
             }
@@ -258,6 +311,7 @@ class BundleTypes extends Component
         }
 
         $this->_bundleTypes = null;
+        Craft::$app->getGql()->invalidateCaches();
 
         return true;
     }
@@ -272,7 +326,7 @@ class BundleTypes extends Component
      * @param BundleType $bundleType The bundle type whose site settings to save.
      * @return void
      * @throws Exception if a referenced site can't be resolved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _saveSiteSettings(BundleType $bundleType): void
@@ -307,7 +361,7 @@ class BundleTypes extends Component
      *
      * @param BundleTypeRecord $record The bundle type record.
      * @return BundleType The populated bundle type model.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _createBundleTypeFromRecord(BundleTypeRecord $record): BundleType
@@ -320,6 +374,8 @@ class BundleTypes extends Component
             'skuFormat' => $record->skuFormat,
             'descriptionFormat' => $record->descriptionFormat,
             'showSlugField' => (bool)$record->showSlugField,
+            'enableVersioning' => (bool)$record->enableVersioning,
+            'componentSources' => Json::decodeIfJson($record->componentSources ?? '"*"') ?: '*',
             'taxTreatment' => $record->taxTreatment,
             'previewTargets' => $record->previewTargets ? Json::decode($record->previewTargets) : [],
             'uid' => $record->uid,

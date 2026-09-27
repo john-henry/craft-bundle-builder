@@ -12,6 +12,8 @@ use craft\db\QueryBatcher;
 use craft\queue\BaseBatchedJob;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
+use Throwable;
+use yii\base\InvalidConfigException;
 
 /**
  * Recalculate bundle prices job.
@@ -21,7 +23,7 @@ use johnhenry\bundlebuilder\elements\Bundle;
  * component used across a lot of bundles is worked through in chunks (and can
  * pick up where it left off) rather than resaving every bundle in one go.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class RecalculateBundlePrices extends BaseBatchedJob
@@ -41,7 +43,8 @@ class RecalculateBundlePrices extends BaseBatchedJob
      * @inheritdoc
      *
      * @return Batchable The bundles that list the product as a component.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function loadData(): Batchable
@@ -62,8 +65,8 @@ class RecalculateBundlePrices extends BaseBatchedJob
      *
      * @param mixed $item The bundle to recalculate.
      * @return void
-     * @throws \Throwable if the bundle can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Throwable if the bundle can't be saved.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function processItem(mixed $item): void
@@ -76,7 +79,7 @@ class RecalculateBundlePrices extends BaseBatchedJob
      * @inheritdoc
      *
      * @return string|null The job description.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function defaultDescription(): ?string
