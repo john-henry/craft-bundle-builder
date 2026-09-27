@@ -33,7 +33,9 @@
   "require-dev": {
     "craftcms/ecs": "dev-main",
     "craftcms/phpstan": "dev-main",
-    "phpstan/phpstan": "^2.2"
+    "phpstan/phpstan": "^2.2",
+    "verbb/hyper": "^2.0 || ^3.0",
+    "verbb/navigation": "^3.0 || ^4.0"
   },
   "suggest": {
     "verbb/hyper": "Adds a Bundle link type to Hyper link fields, so links can point at a bundle.",
