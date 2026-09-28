@@ -1,8 +1,3 @@
-{# ============================================================================
- # Bundle type edit screen
- # Settings (name, handle, formats, per-site URL settings) plus the shared field
- # layout designer for bundles of this type.
- # ========================================================================== #}
 {% extends '_layouts/cp' %}
 {% set selectedSubnavItem = 'bundle-types' %}
 {% import '_includes/forms' as forms %}
@@ -77,9 +72,27 @@
             on: bundleType.showSlugField,
         }) }}
 
+        {{ forms.lightswitchField({
+            label: 'Enable versioning for bundles of this type'|t('bundle-builder'),
+            instructions: 'Whether a revision is saved each time a bundle of this type is saved, so earlier versions can be viewed and reverted to.'|t('bundle-builder'),
+            id: 'enableVersioning',
+            name: 'enableVersioning',
+            on: bundleType.enableVersioning,
+        }) }}
+
+        {{ forms.checkboxSelectField({
+            label: 'Component Sources'|t('bundle-builder'),
+            instructions: 'Which sources can bundle components be picked from?'|t('bundle-builder'),
+            id: 'componentSources',
+            name: 'componentSources',
+            options: componentSourceOptions,
+            values: bundleType.componentSources,
+            showAllOption: true,
+        }) }}
+
         {{ forms.selectField({
             label: 'Tax treatment'|t('bundle-builder'),
-            instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at the bundle’s own tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).'|t('bundle-builder'),
+            instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at one rate, using the store’s default tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).'|t('bundle-builder'),
             id: 'taxTreatment',
             name: 'taxTreatment',
             value: bundleType.taxTreatment,

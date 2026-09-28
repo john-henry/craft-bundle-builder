@@ -17,6 +17,7 @@ use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\enums\TaxTreatment;
 use johnhenry\bundlebuilder\records\BundleTypeRecord;
+use yii\base\InvalidConfigException;
 
 /**
  * Bundle type model.
@@ -26,8 +27,11 @@ use johnhenry\bundlebuilder\records\BundleTypeRecord;
  * that control whether bundles of the type are routable on the front end.
  *
  * @mixin FieldLayoutBehavior
+ * @property-read string $cpEditUrl
+ * @property BundleTypeSite[] $siteSettings
+ * @property-read FieldLayout $bundleFieldLayout
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleType extends Model
@@ -71,12 +75,23 @@ class BundleType extends Model
     public bool $showSlugField = true;
 
     /**
+     * @var bool Whether bundles of this type save a revision each time they're saved.
+     */
+    public bool $enableVersioning = false;
+
+    /**
+     * @var string|string[] The product sources components can be picked from:
+     * `*` for all, or a list of source keys such as `productType:{uid}`.
+     */
+    public string|array $componentSources = '*';
+
+    /**
      * @var string How bundles of this type are taxed ("composite" or "multiple").
      */
     public string $taxTreatment = TaxTreatment::Composite->value;
 
     /**
-     * @var array The bundle type's preview targets (each `['label' => ..., 'urlFormat' => ...]`).
+     * @var array<int, array{label?: string, urlFormat?: string}> The bundle type's preview targets.
      */
     public array $previewTargets = [];
 
@@ -100,7 +115,7 @@ class BundleType extends Model
      * Returns the bundle type's name.
      *
      * @return string The bundle type's name.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function __toString(): string
@@ -111,8 +126,8 @@ class BundleType extends Model
     /**
      * @inheritdoc
      *
-     * @return array The behaviors.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<array-key, class-string|array{class: class-string, ...}> The behaviors.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function behaviors(): array
@@ -130,7 +145,7 @@ class BundleType extends Model
      * Returns the bundle type's control panel edit URL.
      *
      * @return string The CP edit URL.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getCpEditUrl(): string
@@ -142,8 +157,8 @@ class BundleType extends Model
      * Returns the bundle type's field layout.
      *
      * @return FieldLayout The field layout.
-     * @throws \yii\base\InvalidConfigException if the behavior is misconfigured.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException if the behavior is misconfigured.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundleFieldLayout(): FieldLayout
@@ -157,7 +172,8 @@ class BundleType extends Model
      * Returns the bundle type's per-site settings, indexed by site ID.
      *
      * @return BundleTypeSite[] The site settings.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getSiteSettings(): array
@@ -182,7 +198,7 @@ class BundleType extends Model
      *
      * @param BundleTypeSite[] $siteSettings The site settings, indexed by site ID.
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function setSiteSettings(array $siteSettings): void
@@ -197,8 +213,8 @@ class BundleType extends Model
     /**
      * @inheritdoc
      *
-     * @return array The validation rules.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<int, array<int|string, mixed>> The validation rules.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function defineRules(): array

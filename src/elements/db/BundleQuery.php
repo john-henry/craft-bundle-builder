@@ -8,6 +8,8 @@ namespace johnhenry\bundlebuilder\elements\db;
 
 use craft\commerce\elements\db\PurchasableQuery;
 use craft\helpers\Db;
+use johnhenry\bundlebuilder\BundleBuilder;
+use johnhenry\bundlebuilder\elements\Bundle;
 use yii\base\NotSupportedException;
 
 /**
@@ -17,12 +19,13 @@ use yii\base\NotSupportedException;
  * and joins the bundle table so the bundle-specific columns are available on
  * every result.
  *
- * @author JohnHenry <info@johnhenry.ie>
- * @since 1.0.0
+ * @extends PurchasableQuery<int, Bundle>
+ * @method Bundle[] all($db = null)
+ * @method Bundle|null one($db = null)
+ * @method Bundle|null nth(int $n, $db = null)
  *
- * @method \johnhenry\bundlebuilder\elements\Bundle[] all($db = null)
- * @method \johnhenry\bundlebuilder\elements\Bundle|null one($db = null)
- * @method \johnhenry\bundlebuilder\elements\Bundle|null nth(int $n, $db = null)
+ * @author John Henry Donovan <info@johnhenry.ie>
+ * @since 1.0.0
  */
 class BundleQuery extends PurchasableQuery
 {
@@ -52,7 +55,7 @@ class BundleQuery extends PurchasableQuery
      *
      * @param mixed $value The bundle type ID(s).
      * @return static self reference.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function typeId(mixed $value): static
@@ -62,20 +65,33 @@ class BundleQuery extends PurchasableQuery
     }
 
     /**
-     * Narrows the query results to bundles of the given type handle.
+     * Narrows the query results to bundles of the given type handle(s). Null
+     * clears the filter; handles that don't match a bundle type match nothing.
      *
-     * @param string $value The bundle type handle.
+     * @param string|string[]|null $value The bundle type handle(s).
      * @return static self reference.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
-    public function type(string $value): static
+    public function type(string|array|null $value): static
     {
-        $bundleType = \johnhenry\bundlebuilder\BundleBuilder::getInstance()
-            ->getBundleTypes()
-            ->getBundleTypeByHandle($value);
+        if ($value === null) {
+            $this->typeId = null;
+            return $this;
+        }
 
-        $this->typeId = $bundleType?->id ?? 0;
+        $bundleTypes = BundleBuilder::getInstance()->getBundleTypes();
+        $typeIds = [];
+
+        foreach ((array)$value as $handle) {
+            $bundleType = $bundleTypes->getBundleTypeByHandle((string)$handle);
+
+            if ($bundleType !== null) {
+                $typeIds[] = $bundleType->id;
+            }
+        }
+
+        $this->typeId = $typeIds ?: 0;
         return $this;
     }
 
@@ -84,7 +100,7 @@ class BundleQuery extends PurchasableQuery
      *
      * @param mixed $value The post date value.
      * @return static self reference.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function postDate(mixed $value): static
@@ -98,7 +114,7 @@ class BundleQuery extends PurchasableQuery
      *
      * @param mixed $value The expiry date value.
      * @return static self reference.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function expiryDate(mixed $value): static
@@ -115,7 +131,7 @@ class BundleQuery extends PurchasableQuery
      *
      * @return bool Whether the query should be prepared and executed.
      * @throws NotSupportedException
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     protected function beforePrepare(): bool

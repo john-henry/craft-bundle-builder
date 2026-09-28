@@ -2,6 +2,14 @@ includes:
     - %currentWorkingDirectory%/vendor/craftcms/phpstan/phpstan.neon
 
 parameters:
-    level: 5
+    level: 6
     paths:
         - src
+    ignoreErrors:
+        # Container Deposits is an optional integration, and the version that
+        # adds this event isn't on Packagist yet, so a standalone install can't
+        # see its classes. Not reported when they are there.
+        -
+            message: '#johnhenry\\containerdeposits\\#'
+            path: src/base/PluginTrait.php
+            reportUnmatched: false

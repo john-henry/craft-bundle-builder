@@ -1,7 +1,3 @@
-{# ============================================================================
- # Bundle types index
- # Lists every bundle type with links to edit, and a button to create new ones.
- # ========================================================================== #}
 {% extends '_layouts/cp' %}
 {% set selectedSubnavItem = 'bundle-types' %}
 {% set title = 'Bundle Types'|t('bundle-builder') %}
@@ -17,6 +13,10 @@
 {% endblock %}
 
 {% block content %}
+    <p id="nobundletypes"{% if bundleTypes|length %} class="hidden"{% endif %}>
+        {{ 'No bundle types exist yet.'|t('bundle-builder') }}
+    </p>
+
     {% if bundleTypes|length %}
         <table id="bundle-types" class="data fullwidth collapsible">
             <thead>
@@ -42,16 +42,14 @@
                 {% endfor %}
             </tbody>
         </table>
-    {% else %}
-        <p>{{ 'No bundle types exist yet.'|t('bundle-builder') }}</p>
     {% endif %}
 {% endblock %}
 
 {% js %}
     new Craft.AdminTable({
         tableSelector: '#bundle-types',
-        noObjectsSelector: '#nobundletypes',
+        noItemsSelector: '#nobundletypes',
         deleteAction: 'bundle-builder/bundle-types/delete',
-        confirmDeleteMessage: '{{ 'Are you sure you want to delete “{name}” and all of its bundles?'|t('bundle-builder') }}',
+        confirmDeleteMessage: '{{ 'Are you sure you want to delete “{name}” and all of its bundles?'|t('bundle-builder')|e('js') }}',
     });
 {% endjs %}

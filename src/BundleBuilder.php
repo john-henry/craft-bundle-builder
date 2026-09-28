@@ -21,7 +21,7 @@ use johnhenry\bundlebuilder\services\ServicesTrait;
  * onto the order, and the bundle draws its availability from, and decrements,
  * its component variants' inventory.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleBuilder extends BasePlugin
@@ -51,7 +51,7 @@ class BundleBuilder extends BasePlugin
     /**
      * @var string The plugin's schema version.
      */
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.0.6';
 
     // Public Methods
     // =========================================================================
@@ -60,7 +60,7 @@ class BundleBuilder extends BasePlugin
      * @inheritdoc
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function init(): void
@@ -68,8 +68,10 @@ class BundleBuilder extends BasePlugin
         parent::init();
         self::$plugin = $this;
 
+        $this->_registerContainerDeposits();
         $this->_registerElementTypes();
         $this->_registerFieldTypes();
+        $this->_registerGql();
         $this->_registerHyperLinkTypes();
         $this->_registerNativeFields();
         $this->_registerNavigationElements();
@@ -80,6 +82,7 @@ class BundleBuilder extends BasePlugin
 
         if (Craft::$app->getRequest()->getIsCpRequest()) {
             $this->_registerCpUrlRules();
+            $this->_registerOrderEditor();
         }
     }
 }

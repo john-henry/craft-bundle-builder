@@ -8,6 +8,7 @@ namespace johnhenry\bundlebuilder\controllers;
 
 use Craft;
 use craft\behaviors\FieldLayoutBehavior;
+use craft\commerce\fields\Products as ProductsField;
 use craft\web\Controller;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
@@ -27,7 +28,7 @@ use yii\web\Response;
  * saving, and deleting. All actions require an admin account, since bundle types
  * define field layouts and URL settings.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleTypesController extends Controller
@@ -47,8 +48,8 @@ class BundleTypesController extends Controller
      * Renders the bundle types index.
      *
      * @return Response The rendering result.
-     * @throws ForbiddenHttpException if the user is not an admin.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws ForbiddenHttpException|InvalidConfigException if the user is not an admin.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionIndex(): Response
@@ -68,7 +69,8 @@ class BundleTypesController extends Controller
      * @return Response The rendering result.
      * @throws ForbiddenHttpException if the user is not an admin.
      * @throws NotFoundHttpException if the bundle type can't be found.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionEdit(?int $bundleTypeId = null, ?BundleType $bundleType = null): Response
@@ -94,6 +96,7 @@ class BundleTypesController extends Controller
             'bundleTypeId' => $bundleTypeId,
             'bundleType' => $bundleType,
             'title' => $title,
+            'componentSourceOptions' => (new ProductsField())->getSourceOptions(),
         ]);
     }
 
@@ -105,7 +108,7 @@ class BundleTypesController extends Controller
      * @throws ForbiddenHttpException if the user is not an admin.
      * @throws NotFoundHttpException if the posted ID doesn't resolve to a bundle type.
      * @throws Throwable if the bundle type can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionSave(): ?Response
@@ -132,19 +135,27 @@ class BundleTypesController extends Controller
         $bundleType->skuFormat = $request->getBodyParam('skuFormat', $bundleType->skuFormat);
         $bundleType->descriptionFormat = $request->getBodyParam('descriptionFormat', $bundleType->descriptionFormat);
         $bundleType->showSlugField = (bool)$request->getBodyParam('showSlugField', $bundleType->showSlugField);
+        $bundleType->enableVersioning = (bool)$request->getBodyParam('enableVersioning', $bundleType->enableVersioning);
+
+        // A checkbox select posts `*` for All, a list of source keys, or nothing
+        // when every box is cleared, which is taken as All.
+        $componentSources = $request->getBodyParam('componentSources');
+        $bundleType->componentSources = is_array($componentSources) && !empty($componentSources)
+            ? array_values(array_map('strval', $componentSources))
+            : '*';
         $bundleType->taxTreatment = $request->getBodyParam('taxTreatment', $bundleType->taxTreatment);
 
-        // Preview targets: keep only rows with a URL format.
+        // Drop preview target rows with no URL format. With no rows at all the
+        // table posts an empty string.
+        $postedTargets = $request->getBodyParam('previewTargets');
         $previewTargets = array_values(array_filter(
-            $request->getBodyParam('previewTargets', []),
-            static fn(array $target): bool => !empty($target['urlFormat']),
+            is_array($postedTargets) ? $postedTargets : [],
+            static fn(mixed $target): bool => is_array($target) && !empty($target['urlFormat']),
         ));
         $bundleType->previewTargets = $previewTargets;
 
-        // Site settings
         $bundleType->setSiteSettings($this->_siteSettingsFromPost());
 
-        // Field layout
         $fieldLayout = Craft::$app->getFields()->assembleLayoutFromPost();
         $fieldLayout->type = Bundle::class;
         /** @var FieldLayoutBehavior $fieldLayoutBehavior */
@@ -171,7 +182,7 @@ class BundleTypesController extends Controller
      * @throws BadRequestHttpException if the request isn't a POST/JSON request.
      * @throws ForbiddenHttpException if the user is not an admin.
      * @throws Throwable if the bundle type can't be deleted.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionDelete(): Response
@@ -196,8 +207,7 @@ class BundleTypesController extends Controller
      * Builds the bundle type's site settings models from the posted data.
      *
      * @return BundleTypeSite[] The site settings, indexed by site ID.
-     * @throws InvalidConfigException if a posted site can't be resolved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _siteSettingsFromPost(): array
@@ -209,8 +219,7 @@ class BundleTypesController extends Controller
         foreach (Craft::$app->getSites()->getAllSites() as $site) {
             $postedSettings = $postedSites[$site->handle] ?? null;
 
-            // Only sites whose "enabled" switch is on get a settings row, so the
-            // bundle propagates exactly where the merchandiser chose.
+            // Sites switched off get no settings row, so bundles don't propagate there.
             if ($postedSettings === null || empty($postedSettings['enabled'])) {
                 continue;
             }

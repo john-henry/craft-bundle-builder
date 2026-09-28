@@ -7,7 +7,11 @@
 namespace johnhenry\bundlebuilder\base;
 
 use Craft;
+use craft\base\Element;
+use craft\commerce\elements\Order;
 use craft\commerce\elements\Product;
+use craft\commerce\elements\Variant;
+use craft\commerce\enums\LineItemType;
 use craft\commerce\fieldlayoutelements\PurchasableAvailableForPurchaseField;
 use craft\commerce\fieldlayoutelements\PurchasableFreeShippingField;
 use craft\commerce\fieldlayoutelements\PurchasablePromotableField;
@@ -15,36 +19,52 @@ use craft\commerce\fieldlayoutelements\PurchasableSkuField;
 use craft\commerce\services\OrderAdjustments;
 use craft\events\DefineFieldLayoutFieldsEvent;
 use craft\events\RegisterComponentTypesEvent;
+use craft\events\RegisterGqlQueriesEvent;
+use craft\events\RegisterGqlSchemaComponentsEvent;
+use craft\events\RegisterGqlTypesEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\events\RegisterUserPermissionsEvent;
 use craft\fieldlayoutelements\TitleField;
+use craft\helpers\Json;
 use craft\models\FieldLayout;
 use craft\services\Elements;
 use craft\services\Fields;
+use craft\services\Gql;
 use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
 use johnhenry\bundlebuilder\adjusters\BundleTaxAdjuster;
+use johnhenry\bundlebuilder\assets\OrderEditorAsset;
+use johnhenry\bundlebuilder\BundleBuilder;
+use johnhenry\bundlebuilder\controllers\BundlesController;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\fieldlayoutelements\BundleComponentsField;
 use johnhenry\bundlebuilder\fieldlayoutelements\BundlePricingField;
 use johnhenry\bundlebuilder\fields\Bundles as BundlesField;
+use johnhenry\bundlebuilder\gql\interfaces\elements\Bundle as BundleInterface;
+use johnhenry\bundlebuilder\gql\queries\Bundle as BundleQueries;
+use johnhenry\bundlebuilder\helpers\Gql as GqlHelper;
 use johnhenry\bundlebuilder\jobs\RecalculateBundlePrices;
 use johnhenry\bundlebuilder\links\Bundle as BundleLink;
+use johnhenry\bundlebuilder\nodetypes\Bundle as BundleNodeType;
 use johnhenry\bundlebuilder\records\BundleProductRecord;
 use johnhenry\bundlebuilder\variables\BundleBuilderVariable;
+use johnhenry\containerdeposits\events\DefineLineItemContentsEvent;
+use johnhenry\containerdeposits\services\DepositCartService;
 use verbb\hyper\services\Links;
 use verbb\navigation\events\RegisterElementEvent;
+use verbb\navigation\events\RegisterNodeTypeEvent;
 use verbb\navigation\services\Elements as NavigationElements;
+use verbb\navigation\services\NodeTypes;
 use yii\base\Event;
 
 /**
  * PluginTrait
  *
- * Holds the plugin's event-listener registration, control-panel URL rules, and
- * lifecycle overrides, keeping the main plugin class a thin orchestrating shell.
+ * Event-listener registration, control panel URL rules, and lifecycle
+ * overrides for the main plugin class.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 trait PluginTrait
@@ -55,8 +75,8 @@ trait PluginTrait
     /**
      * @inheritdoc
      *
-     * @return array|null The CP nav item definition.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @return array<string, mixed>|null The CP nav item definition.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getCpNavItem(): ?array
@@ -84,10 +104,95 @@ trait PluginTrait
     // =========================================================================
 
     /**
+     * Adds each bundle's chosen components to its line on the CP order edit
+     * screen, with a variant editor on orders that aren't completed yet.
+     *
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _registerOrderEditor(): void
+    {
+        Craft::$app->getView()->hook('cp.commerce.order.edit', function(array &$context): string {
+            $order = $context['order'] ?? null;
+
+            if (!$order instanceof Order) {
+                return '';
+            }
+
+            $lines = $this->getBundleCart()->getOrderComponents($order);
+
+            if (empty($lines)) {
+                return '';
+            }
+
+            $view = Craft::$app->getView();
+            $view->registerAssetBundle(OrderEditorAsset::class);
+            $view->registerTranslations('bundle-builder', [
+                'Bundle components',
+                'Change variants',
+                'Change bundle variants',
+                'Save',
+                'Cancel',
+                'Save or discard your changes to the order before changing bundle variants.',
+                'Couldn’t change the variants.',
+                'Variants changed.',
+            ]);
+            $view->registerJs(sprintf(
+                'new Craft.BundleBuilder.OrderVariantEditor(%s);',
+                Json::htmlEncode([
+                    'orderId' => $order->id,
+                    'editable' => !$order->isCompleted && Craft::$app->getUser()->checkPermission('commerce-editOrders'),
+                    'lines' => $lines,
+                ]),
+            ));
+
+            return '';
+        });
+    }
+
+    /**
+     * Tells Container Deposits what's inside each bundle line, when it's
+     * enabled, so the cans and bottles chosen for a bundle carry their deposit
+     * the same as they would bought on their own.
+     *
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _registerContainerDeposits(): void
+    {
+        if (!Craft::$app->getPlugins()->isPluginEnabled('container-deposits') || !class_exists(DefineLineItemContentsEvent::class)) {
+            return;
+        }
+
+        Event::on(
+            DepositCartService::class,
+            DepositCartService::EVENT_DEFINE_LINE_ITEM_CONTENTS,
+            static function(DefineLineItemContentsEvent $event): void {
+                $lineItem = $event->lineItem;
+
+                // Custom line items have no purchasable, and asking for one throws
+                if ($lineItem->type !== LineItemType::Purchasable) {
+                    return;
+                }
+
+                if (!$lineItem->getPurchasable() instanceof Bundle && !isset($lineItem->getSnapshot()['bundleProducts'])) {
+                    return;
+                }
+
+                foreach (BundleBuilder::getInstance()->getBundleCart()->getComponentVariants($lineItem) as $component) {
+                    $event->contents[] = ['purchasable' => $component['variant'], 'qty' => $component['qty']];
+                }
+            }
+        );
+    }
+
+    /**
      * Registers the plugin's control panel URL rules.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerCpUrlRules(): void
@@ -95,7 +200,7 @@ trait PluginTrait
         Event::on(
             UrlManager::class,
             UrlManager::EVENT_REGISTER_CP_URL_RULES,
-            static function(RegisterUrlRulesEvent $event) {
+            static function(RegisterUrlRulesEvent $event): void {
                 $event->rules = array_merge([
                     'bundle-builder' => 'bundle-builder/bundles/index',
                     'bundle-builder/bundles' => 'bundle-builder/bundles/index',
@@ -113,7 +218,7 @@ trait PluginTrait
      * Registers the plugin's element types.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerElementTypes(): void
@@ -121,7 +226,7 @@ trait PluginTrait
         Event::on(
             Elements::class,
             Elements::EVENT_REGISTER_ELEMENT_TYPES,
-            static function(RegisterComponentTypesEvent $event) {
+            static function(RegisterComponentTypesEvent $event): void {
                 $event->types[] = Bundle::class;
             }
         );
@@ -131,7 +236,7 @@ trait PluginTrait
      * Registers the plugin's field types.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerFieldTypes(): void
@@ -139,20 +244,65 @@ trait PluginTrait
         Event::on(
             Fields::class,
             Fields::EVENT_REGISTER_FIELD_TYPES,
-            static function(RegisterComponentTypesEvent $event) {
+            static function(RegisterComponentTypesEvent $event): void {
                 $event->types[] = BundlesField::class;
             }
         );
     }
 
     /**
-     * Registers the Bundle link type with Verbb's Hyper, letting editors point a
-     * Hyper link field at a bundle. Only registered when Hyper is installed and
-     * enabled, so the plugin carries Hyper as a soft dependency rather than a
-     * hard one.
+     * Registers the bundle GraphQL interface, the `bundles`, `bundle` and
+     * `bundleCount` queries, and a read scope per bundle type for schemas.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _registerGql(): void
+    {
+        Event::on(
+            Gql::class,
+            Gql::EVENT_REGISTER_GQL_TYPES,
+            static function(RegisterGqlTypesEvent $event): void {
+                $event->types[] = BundleInterface::class;
+            }
+        );
+
+        Event::on(
+            Gql::class,
+            Gql::EVENT_REGISTER_GQL_QUERIES,
+            static function(RegisterGqlQueriesEvent $event): void {
+                $event->queries = array_merge($event->queries, BundleQueries::getQueries());
+            }
+        );
+
+        Event::on(
+            Gql::class,
+            Gql::EVENT_REGISTER_GQL_SCHEMA_COMPONENTS,
+            function(RegisterGqlSchemaComponentsEvent $event): void {
+                $components = [];
+
+                foreach ($this->getBundleTypes()->getAllBundleTypes() as $bundleType) {
+                    $scope = GqlHelper::SCOPE_BUNDLE_TYPES . '.' . $bundleType->uid . ':read';
+                    $components[$scope] = [
+                        'label' => Craft::t('bundle-builder', 'Query for bundles in the “{name}” bundle type', ['name' => $bundleType->name]),
+                    ];
+                }
+
+                if (empty($components)) {
+                    return;
+                }
+
+                $event->queries[Craft::t('bundle-builder', 'Bundles')] = $components;
+            }
+        );
+    }
+
+    /**
+     * Registers the Bundle link type with Hyper, when Hyper is enabled.
+     *
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     private function _registerHyperLinkTypes(): void
@@ -164,19 +314,17 @@ trait PluginTrait
         Event::on(
             Links::class,
             Links::EVENT_REGISTER_LINK_TYPES,
-            static function(RegisterComponentTypesEvent $event) {
+            static function(RegisterComponentTypesEvent $event): void {
                 $event->types[] = BundleLink::class;
             }
         );
     }
 
     /**
-     * Registers the bundle element's native field-layout elements (title, SKU,
-     * pricing, components, and the optional purchasable toggles) so they appear
-     * in the bundle type's field layout designer and the native editor.
+     * Registers the bundle element's native field layout elements.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerNativeFields(): void
@@ -184,7 +332,7 @@ trait PluginTrait
         Event::on(
             FieldLayout::class,
             FieldLayout::EVENT_DEFINE_NATIVE_FIELDS,
-            static function(DefineFieldLayoutFieldsEvent $event) {
+            static function(DefineFieldLayoutFieldsEvent $event): void {
                 /** @var FieldLayout $fieldLayout */
                 $fieldLayout = $event->sender;
 
@@ -204,16 +352,12 @@ trait PluginTrait
     }
 
     /**
-     * Enables bundles as a node type in Verbb's Navigation. Navigation already
-     * auto-discovers any element type whose `hasUris()` returns true, but leaves
-     * it toggled off (no `default` flag), so bundles wouldn't appear in a
-     * navigation's node types until an admin enabled them per-nav. This flips the
-     * auto-discovered entry on by default and gives it a bundle-specific button
-     * label. Only registered when Navigation is installed and enabled, so the
-     * plugin carries Navigation as a soft dependency.
+     * Makes bundles a Navigation node type, enabled by default, when Navigation
+     * is enabled. Navigation 4 needs the node type registered; Navigation 3
+     * auto-discovers element types with URIs but leaves them switched off.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     private function _registerNavigationElements(): void
@@ -222,14 +366,26 @@ trait PluginTrait
             return;
         }
 
+        if (class_exists(NodeTypes::class)) {
+            Event::on(
+                NodeTypes::class,
+                NodeTypes::EVENT_REGISTER_NODE_TYPES,
+                static function(RegisterNodeTypeEvent $event): void {
+                    if (!in_array(BundleNodeType::class, $event->types, true)) {
+                        $event->types[] = BundleNodeType::class;
+                    }
+                }
+            );
+
+            return;
+        }
+
         Event::on(
             NavigationElements::class,
             NavigationElements::EVENT_REGISTER_NAVIGATION_ELEMENT,
-            static function(RegisterElementEvent $event) {
-                // Flip the existing auto-discovered Bundle entry on rather than
-                // appending a second one, which would duplicate it in the node
-                // type list. Only append if a future Navigation release stops
-                // auto-discovering URI-enabled element types.
+            static function(RegisterElementEvent $event): void {
+                // Update the auto-discovered entry in place; appending a second
+                // one would list bundles twice.
                 foreach ($event->elements as &$element) {
                     if (($element['type'] ?? null) === Bundle::class) {
                         $element['default'] = true;
@@ -256,7 +412,7 @@ trait PluginTrait
      * Registers the plugin's user permissions, scoped per bundle type.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerPermissions(): void
@@ -264,12 +420,11 @@ trait PluginTrait
         Event::on(
             UserPermissions::class,
             UserPermissions::EVENT_REGISTER_PERMISSIONS,
-            function(RegisterUserPermissionsEvent $event) {
+            function(RegisterUserPermissionsEvent $event): void {
                 $bundleTypePermissions = [];
 
                 foreach ($this->getBundleTypes()->getAllBundleTypes() as $bundleType) {
-                    $suffix = ':' . $bundleType->uid;
-                    $bundleTypePermissions["bundle-builder:manageBundles{$suffix}"] = [
+                    $bundleTypePermissions[BundlesController::PERMISSION_MANAGE_BUNDLES . ':' . $bundleType->uid] = [
                         'label' => Craft::t('bundle-builder', 'Manage “{type}” bundles', ['type' => $bundleType->name]),
                     ];
                 }
@@ -283,51 +438,49 @@ trait PluginTrait
     }
 
     /**
-     * Recalculates automatically priced bundles whenever a component product is
-     * saved, deleted or restored, so their stored price tracks component price
-     * changes and a deleted component stops contributing to the subtotal. Only
-     * queues when the product is actually used in a bundle, and at most once per
-     * product per request. Queued rather than run synchronously; see
-     * {@see RecalculateBundlePrices}.
+     * Queues a {@see RecalculateBundlePrices} job when a component product, or
+     * one of its variants on its own, is saved, deleted or restored, at most
+     * once per product per request. A variant saved by itself (an import, say)
+     * doesn't save its product, but can still change the price or which
+     * variant is a component's default.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerPricingRecalculation(): void
     {
-        // EVENT_AFTER_SAVE fires with a ModelEvent; EVENT_AFTER_DELETE and
-        // EVENT_AFTER_RESTORE fire with a plain yii\base\Event; type-hint the
-        // common ancestor so the same handler can be used for all three.
+        // Typed to the common ancestor: after-save passes a ModelEvent, the
+        // others a plain Event.
         $queueRecalculation = static function(Event $event): void {
-            // One job per product per request: a bulk edit that resaves the same
-            // component a few times shouldn't queue the same recalculation twice.
             static $queued = [];
 
-            /** @var Product $product */
-            $product = $event->sender;
+            /** @var Product|Variant $element */
+            $element = $event->sender;
 
-            if (!$product->id || $product->getIsDraft() || $product->getIsRevision() || $product->propagating) {
+            if ($element->getIsDraft() || $element->getIsRevision() || $element->propagating) {
                 return;
             }
 
-            if (isset($queued[$product->id])) {
+            $productId = $element instanceof Variant ? $element->getPrimaryOwnerId() : $element->id;
+
+            if (!$productId || isset($queued[$productId])) {
                 return;
             }
 
-            // Only bother when the product is actually a component of a bundle,
-            // so saving any other product doesn't queue a job that does nothing.
-            if (!BundleProductRecord::find()->where(['productId' => $product->id])->exists()) {
+            if (!BundleProductRecord::find()->where(['productId' => $productId])->exists()) {
                 return;
             }
 
-            $queued[$product->id] = true;
-            Craft::$app->getQueue()->push(new RecalculateBundlePrices(['productId' => $product->id]));
+            $queued[$productId] = true;
+            Craft::$app->getQueue()->push(new RecalculateBundlePrices(['productId' => $productId]));
         };
 
-        Event::on(Product::class, Product::EVENT_AFTER_SAVE, $queueRecalculation);
-        Event::on(Product::class, Product::EVENT_AFTER_DELETE, $queueRecalculation);
-        Event::on(Product::class, Product::EVENT_AFTER_RESTORE, $queueRecalculation);
+        foreach ([Product::class, Variant::class] as $class) {
+            Event::on($class, Element::EVENT_AFTER_SAVE, $queueRecalculation);
+            Event::on($class, Element::EVENT_AFTER_DELETE, $queueRecalculation);
+            Event::on($class, Element::EVENT_AFTER_RESTORE, $queueRecalculation);
+        }
     }
 
     /**
@@ -335,7 +488,7 @@ trait PluginTrait
      * components of multiple-supply bundles.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerTaxAdjuster(): void
@@ -343,7 +496,7 @@ trait PluginTrait
         Event::on(
             OrderAdjustments::class,
             OrderAdjustments::EVENT_REGISTER_ORDER_ADJUSTERS,
-            static function(RegisterComponentTypesEvent $event) {
+            static function(RegisterComponentTypesEvent $event): void {
                 $event->types[] = BundleTaxAdjuster::class;
             }
         );
@@ -353,7 +506,7 @@ trait PluginTrait
      * Registers the `craft.bundleBuilder` Twig variable.
      *
      * @return void
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     private function _registerTwigVariable(): void
@@ -361,7 +514,7 @@ trait PluginTrait
         Event::on(
             CraftVariable::class,
             CraftVariable::EVENT_INIT,
-            static function(Event $event) {
+            static function(Event $event): void {
                 /** @var CraftVariable $variable */
                 $variable = $event->sender;
                 $variable->set('bundleBuilder', BundleBuilderVariable::class);

@@ -8,6 +8,7 @@ namespace johnhenry\bundlebuilder\controllers;
 
 use Craft;
 use craft\base\Element;
+use craft\commerce\elements\Product;
 use craft\helpers\Cp;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\ElementHelper;
@@ -15,6 +16,8 @@ use craft\helpers\UrlHelper;
 use craft\web\Controller;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
+use johnhenry\bundlebuilder\models\BundleProduct;
+use Throwable;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\web\Response;
@@ -27,11 +30,19 @@ use yii\web\Response;
  * picker. Editing and saving are handled by Craft's native element editor
  * (`elements/edit` + `elements/save*`).
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundlesController extends Controller
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var string The base of the per-bundle-type permission; append `:{bundleTypeUid}`.
+     */
+    public const PERMISSION_MANAGE_BUNDLES = 'bundle-builder:manage-bundles';
+
     // Protected Properties
     // =========================================================================
 
@@ -48,7 +59,8 @@ class BundlesController extends Controller
      *
      * @return Response The rendering result.
      * @throws ForbiddenHttpException if the user can't manage bundles of any type.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws BadRequestHttpException
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionIndex(): Response
@@ -72,8 +84,8 @@ class BundlesController extends Controller
      * @return Response|null The response, or null on a model failure.
      * @throws BadRequestHttpException if no editable bundle type exists.
      * @throws ForbiddenHttpException if the user can't create bundles.
-     * @throws \Throwable if the draft can't be saved.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @throws Throwable if the draft can't be saved.
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function actionCreate(): ?Response
@@ -92,6 +104,8 @@ class BundlesController extends Controller
             throw new BadRequestHttpException(Craft::t('bundle-builder', 'No editable bundle type exists.'));
         }
 
+        $this->requirePermission(self::PERMISSION_MANAGE_BUNDLES . ':' . $bundleType->uid);
+
         $site = Cp::requestedSite();
 
         if (!$site) {
@@ -103,7 +117,7 @@ class BundlesController extends Controller
         $bundle = Craft::createObject(Bundle::class);
         $bundle->siteId = $site->id;
         $bundle->typeId = $bundleType->id;
-        $bundle->enabled = true;
+        $bundle->applyDefaultStatus();
 
         if (!Craft::$app->getElements()->canSave($bundle, $user)) {
             throw new ForbiddenHttpException('User not authorized to create this bundle.');
@@ -151,30 +165,96 @@ class BundlesController extends Controller
     }
 
     /**
-     * Renders a single, empty component row for the AJAX component picker.
+     * Renders a component row for each product picked in the bundle editor's
+     * product selector modal, at the posted quantity (1 for a new row, the
+     * row's own when its product is swapped).
      *
-     * @return Response The rendered row, head HTML, and body HTML.
-     * @throws BadRequestHttpException if the request isn't an AJAX request.
-     * @author JohnHenry <info@johnhenry.ie>
-     * @since 1.0.0
+     * The same partial the bundle editor renders server-side for the rows that
+     * are already there, so added rows match them exactly.
+     *
+     * @return Response The rendered rows, head HTML, and body HTML.
+     * @throws BadRequestHttpException if the request isn't an AJAX request, or the namespace isn't a form namespace.
+     * @throws ForbiddenHttpException if the user can't manage bundles of the posted type.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
      */
-    public function actionProductRow(): Response
+    public function actionProductRows(): Response
     {
         $this->requireCpRequest();
         $this->requireAcceptsJson();
 
-        $index = $this->request->getRequiredParam('index');
+        $typeId = (int)$this->request->getParam('typeId');
+        $editableTypeIds = array_map(
+            static fn($bundleType): int => (int)$bundleType->id,
+            BundleBuilder::getInstance()->getBundleTypes()->getEditableBundleTypes(),
+        );
+
+        if (!in_array($typeId, $editableTypeIds, true)) {
+            throw new ForbiddenHttpException(Craft::t('bundle-builder', 'User not authorized to manage bundles of this type.'));
+        }
+
+        $namespace = $this->request->getParam('namespace');
+
+        if ($namespace !== null && $namespace !== '' && (!is_string($namespace) || !preg_match('/^[\w\-\[\]]+$/', $namespace))) {
+            throw new BadRequestHttpException('Invalid namespace.');
+        }
+
+        $index = (int)$this->request->getRequiredParam('index');
+        $qty = max(1, (int)$this->request->getParam('qty', 1));
+        $existingIds = $this->_intList($this->request->getParam('existingProductIds'));
+        $bundleType = BundleBuilder::getInstance()->getBundleTypes()->getBundleTypeById($typeId);
+
+        // Only real products: not drafts, revisions or anything else by ID
+        $productIds = Product::find()
+            ->id($this->_intList($this->request->getParam('productIds')) ?: [0])
+            ->status(null)
+            ->fixedOrder()
+            ->ids();
+        $productIds = array_map('intval', $productIds);
+        $allIds = array_values(array_unique([...$existingIds, ...$productIds]));
         $view = $this->getView();
 
-        $html = $view->renderTemplate('bundle-builder/bundles/_product-row', [
-            'index' => $index,
-            'bundleProduct' => null,
-        ]);
+        // Rendered under the editor's namespace, so rows added in a slideout
+        // post alongside the rows already there.
+        $html = $view->namespaceInputs(function() use ($view, $productIds, $allIds, $index, $qty, $bundleType): string {
+            $rows = '';
+
+            foreach ($productIds as $i => $productId) {
+                $rows .= $view->renderTemplate('bundle-builder/bundles/_product-row', [
+                    'index' => $index + $i,
+                    'bundleProduct' => new BundleProduct(['productId' => $productId, 'qty' => $qty]),
+                    'disabledProductIds' => array_values(array_diff($allIds, [$productId])),
+                    'componentSources' => $bundleType->componentSources ?? '*',
+                ]);
+            }
+
+            return $rows;
+        }, $namespace ?: null);
 
         return $this->asJson([
             'html' => $html,
             'headHtml' => $view->getHeadHtml(),
             'bodyHtml' => $view->getBodyHtml(),
         ]);
+    }
+
+    // Private Methods
+    // =========================================================================
+
+    /**
+     * Returns a posted list of IDs as integers, dropping anything that isn't one.
+     *
+     * @param mixed $value The posted value.
+     * @return int[] The IDs.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.2.0
+     */
+    private function _intList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_map('intval', array_filter($value, 'is_numeric')));
     }
 }

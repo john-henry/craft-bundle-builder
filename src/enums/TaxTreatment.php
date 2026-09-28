@@ -14,7 +14,7 @@ namespace johnhenry\bundlebuilder\enums;
  * wholly at the rate of its principal element, while a multiple supply has its
  * price apportioned across components, each taxed at its own component's rate.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 enum TaxTreatment: string

@@ -1,0 +1,32 @@
+.bb-order-components {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.bb-order-components-heading {
+  margin: 0;
+  color: var(--medium-text-color);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bb-order-components ul {
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.bb-order-components li {
+  padding: 1px 0;
+}
+
+.bb-variant-modal {
+  min-width: 420px;
+}
+
+.bb-variant-modal .select,
+.bb-variant-modal select {
+  width: 100%;
+}

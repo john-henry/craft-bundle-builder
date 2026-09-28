@@ -8,6 +8,7 @@ namespace johnhenry\bundlebuilder\variables;
 
 use Craft;
 use craft\commerce\elements\Product;
+use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\elements\db\BundleQuery;
 
@@ -17,7 +18,7 @@ use johnhenry\bundlebuilder\elements\db\BundleQuery;
  * Exposes bundles to templates via `craft.bundleBuilder`: a query builder and
  * a reverse lookup that finds the bundles a given product belongs to.
  *
- * @author JohnHenry <info@johnhenry.ie>
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleBuilderVariable
@@ -28,9 +29,9 @@ class BundleBuilderVariable
     /**
      * Returns a bundle element query, optionally configured with criteria.
      *
-     * @param array $criteria The query criteria.
+     * @param array<string, mixed> $criteria The query criteria.
      * @return BundleQuery The bundle query.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function bundles(array $criteria = []): BundleQuery
@@ -45,9 +46,9 @@ class BundleBuilderVariable
      * Returns the bundles that include the given product.
      *
      * @param Product|int $product The product, or its ID.
-     * @param array $criteria Additional query criteria (e.g. status).
+     * @param array<string, mixed> $criteria Additional query criteria (e.g. status).
      * @return Bundle[] The bundles containing the product.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function getBundlesForProduct(Product|int $product, array $criteria = []): array
@@ -58,17 +59,13 @@ class BundleBuilderVariable
             return [];
         }
 
-        $bundleIds = (new \craft\db\Query())
-            ->select(['bundleId'])
-            ->from(['{{%bundlebuilder_products}}'])
-            ->where(['productId' => $productId])
-            ->column();
+        $bundleIds = BundleBuilder::getInstance()->getBundlePricing()->getBundleIdsForProduct($productId);
 
         if (empty($bundleIds)) {
             return [];
         }
 
-        $query = Bundle::find()->id(array_values(array_unique(array_map('intval', $bundleIds))));
+        $query = Bundle::find()->id($bundleIds);
         Craft::configure($query, $criteria);
 
         return $query->all();

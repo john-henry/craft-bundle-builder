@@ -19,8 +19,10 @@ use craft\db\ActiveRecord;
  * @property int $bundleId The bundle's ID.
  * @property int $productId The included product's ID.
  * @property int $qty The quantity of the product in the bundle.
+ * @property string|null $variantIds JSON list of the variant IDs the customer can choose from, or null for all.
  * @property int|null $sortOrder The product's sort order within the bundle.
- * @author JohnHenry <info@johnhenry.ie>
+ *
+ * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
  */
 class BundleProductRecord extends ActiveRecord
@@ -32,7 +34,7 @@ class BundleProductRecord extends ActiveRecord
      * Returns the name of the database table this record uses.
      *
      * @return string The table name.
-     * @author JohnHenry <info@johnhenry.ie>
+     * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public static function tableName(): string
