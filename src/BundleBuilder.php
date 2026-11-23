@@ -8,8 +8,12 @@ namespace johnhenry\bundlebuilder;
 
 use Craft;
 use craft\base\Plugin as BasePlugin;
+use craft\events\RebuildConfigEvent;
+use craft\services\ProjectConfig;
 use johnhenry\bundlebuilder\base\PluginTrait;
+use johnhenry\bundlebuilder\services\BundleTypes;
 use johnhenry\bundlebuilder\services\ServicesTrait;
+use yii\base\Event;
 
 /**
  * Bundle Builder plugin.
@@ -67,6 +71,20 @@ class BundleBuilder extends BasePlugin
     {
         parent::init();
         self::$plugin = $this;
+
+        $bundleTypes = $this->getBundleTypes();
+        Craft::$app->getProjectConfig()
+            ->onAdd(BundleTypes::CONFIG_BUNDLE_TYPES . '.{uid}', [$bundleTypes, 'handleChangedBundleType'])
+            ->onUpdate(BundleTypes::CONFIG_BUNDLE_TYPES . '.{uid}', [$bundleTypes, 'handleChangedBundleType'])
+            ->onRemove(BundleTypes::CONFIG_BUNDLE_TYPES . '.{uid}', [$bundleTypes, 'handleDeletedBundleType'])
+            ->onRemove('sites.{uid}', [$bundleTypes, 'pruneDeletedSite']);
+
+        Event::on(ProjectConfig::class, ProjectConfig::EVENT_REBUILD, static function (RebuildConfigEvent $event): void {
+            $event->config['bundleBuilder']['bundleTypes'] = [];
+            foreach (self::$plugin->getBundleTypes()->getAllBundleTypes() as $bundleType) {
+                $event->config['bundleBuilder']['bundleTypes'][$bundleType->uid] = $bundleType->getConfig();
+            }
+        });
 
         $this->_registerContainerDeposits();
         $this->_registerElementTypes();

@@ -6,9 +6,12 @@
 
 namespace johnhenry\bundlebuilder\models;
 
+use Craft;
 use craft\base\Model;
 use craft\behaviors\FieldLayoutBehavior;
 use craft\helpers\ArrayHelper;
+use craft\helpers\Db;
+use craft\helpers\ProjectConfig as ProjectConfigHelper;
 use craft\helpers\UrlHelper;
 use craft\models\FieldLayout;
 use craft\validators\HandleValidator;
@@ -208,6 +211,57 @@ class BundleType extends Model
         foreach ($this->_siteSettings as $settings) {
             $settings->setBundleType($this);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getConfig(): array
+    {
+        $layout = $this->getBundleFieldLayout();
+        if ($this->fieldLayoutId) {
+            $layoutUid = Db::uidById('{{%fieldlayouts}}', $this->fieldLayoutId);
+            if ($layoutUid === null) {
+                throw new InvalidConfigException("Invalid field layout ID: {$this->fieldLayoutId}");
+            }
+            $layout->uid = $layoutUid;
+        }
+
+        $config = [
+            'name' => $this->name,
+            'handle' => $this->handle,
+            'skuFormat' => $this->skuFormat,
+            'descriptionFormat' => $this->descriptionFormat,
+            'showSlugField' => $this->showSlugField,
+            'enableVersioning' => $this->enableVersioning,
+            'componentSources' => $this->componentSources,
+            'taxTreatment' => $this->taxTreatment,
+            'previewTargets' => ProjectConfigHelper::packAssociativeArray(array_values($this->previewTargets)),
+            'fieldLayouts' => [$layout->uid => $layout->getConfig() ?? []],
+            'siteSettings' => [],
+        ];
+
+        $siteSettings = $this->getSiteSettings();
+        if (empty($siteSettings)) {
+            foreach (Craft::$app->getSites()->getAllSites() as $site) {
+                $siteSettings[] = new BundleTypeSite(['siteId' => $site->id]);
+            }
+        }
+
+        foreach ($siteSettings as $settings) {
+            $siteUid = $settings->siteId !== null ? Db::uidById('{{%sites}}', $settings->siteId) : null;
+            if ($siteUid === null) {
+                throw new InvalidConfigException("Invalid site ID: {$settings->siteId}");
+            }
+            $config['siteSettings'][$siteUid] = [
+                'hasUrls' => $settings->hasUrls,
+                'uriFormat' => $settings->hasUrls ? $settings->uriFormat : null,
+                'template' => $settings->hasUrls ? $settings->template : null,
+                'enabledByDefault' => $settings->enabledByDefault,
+            ];
+        }
+
+        return $config;
     }
 
     /**

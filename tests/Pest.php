@@ -30,7 +30,6 @@ use johnhenry\bundlebuilder\enums\PricingStrategy;
 use johnhenry\bundlebuilder\enums\TaxTreatment;
 use johnhenry\bundlebuilder\helpers\Gql as GqlHelper;
 use johnhenry\bundlebuilder\models\BundleType;
-use johnhenry\bundlebuilder\records\BundleTypeRecord;
 use markhuot\craftpest\test\RefreshesDatabase;
 use markhuot\craftpest\test\TestCase;
 use yii\caching\ArrayCache;
@@ -50,6 +49,12 @@ beforeEach(function () {
     // Swap the Craft cache to a fresh in-memory store so each test starts with an
     // empty cache and avoids FileCache filesystem noise.
     Craft::$app->set('cache', new ArrayCache());
+    $projectConfig = Craft::$app->getProjectConfig();
+    $projectConfig->writeYamlAutomatically = false;
+    foreach ([\craft\services\ProjectConfig::EVENT_ADD_ITEM, \craft\services\ProjectConfig::EVENT_UPDATE_ITEM, \craft\services\ProjectConfig::EVENT_REMOVE_ITEM] as $event) {
+        $projectConfig->off($event, [$projectConfig, 'handleChangeEvent']);
+    }
+    $projectConfig->reset();
     resetBundleTypesCache();
 })->in('Integration');
 
@@ -81,8 +86,12 @@ function makeBundleType(
     string $handle = 'starterKit',
     string $taxTreatment = TaxTreatment::Composite->value,
 ): BundleType {
-    BundleTypeRecord::deleteAll(['handle' => $handle]);
     resetBundleTypesCache();
+    $service = BundleBuilder::getInstance()->getBundleTypes();
+    $existing = $service->getBundleTypeByHandle($handle);
+    if ($existing !== null) {
+        $service->deleteBundleTypeById($existing->id);
+    }
 
     $type = new BundleType();
     $type->name = $name;

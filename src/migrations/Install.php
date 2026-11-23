@@ -11,6 +11,7 @@ use craft\commerce\models\TaxCategory;
 use craft\commerce\Plugin as Commerce;
 use craft\db\Migration;
 use johnhenry\bundlebuilder\elements\Bundle;
+use johnhenry\bundlebuilder\services\BundleTypes;
 use Throwable;
 use yii\base\InvalidConfigException;
 use yii\db\Exception;
@@ -81,6 +82,7 @@ class Install extends Migration
      */
     public function safeDown(): bool
     {
+        Craft::$app->getProjectConfig()->remove(BundleTypes::CONFIG_BUNDLE_TYPES);
         $this->delete('{{%elements}}', ['type' => Bundle::class]);
         $this->delete('{{%fieldlayouts}}', ['type' => Bundle::class]);
         $this->_deleteApportionedTaxCategory();
