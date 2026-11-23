@@ -200,6 +200,11 @@ class Bundle extends Purchasable
         return true;
     }
 
+    public static function isLocalized(): bool
+    {
+        return true;
+    }
+
     /**
      * @inheritdoc
      *
@@ -575,7 +580,7 @@ class Bundle extends Purchasable
      */
     public function getPostEditUrl(): ?string
     {
-        return UrlHelper::cpUrl('bundle-builder/bundles');
+        return UrlHelper::cpUrl('bundle-builder/bundles', ['site' => $this->getSite()->handle]);
     }
 
     /**
@@ -1329,6 +1334,8 @@ class Bundle extends Purchasable
                 'label' => $bundleType->name,
                 'data' => ['handle' => $bundleType->handle],
                 'criteria' => ['typeId' => $bundleType->id],
+                'sites' => array_keys($bundleType->getSiteSettings()),
+                'disabled' => empty($bundleType->getSiteSettings()),
             ];
         }
 

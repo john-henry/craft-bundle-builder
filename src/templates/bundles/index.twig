@@ -4,21 +4,15 @@
 {% set elementType = 'johnhenry\\bundlebuilder\\elements\\Bundle' %}
 
 {% block actionButton %}
-    {% if bundleTypes|length == 1 %}
-        <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
-            {{ 'New bundle'|t('bundle-builder') }}
-        </a>
-    {% elseif bundleTypes|length > 1 %}
-        <div class="btngroup submit">
-            <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
-                {{ 'New bundle'|t('bundle-builder') }}
-            </a>
-            <div class="btn submit menubtn"></div>
-            <div class="menu">
+    {% if bundleTypes|length %}
+        <div id="bundle-create" class="btngroup submit hidden">
+            <a class="btn submit add icon" data-bundle-primary>{{ 'New bundle'|t('bundle-builder') }}</a>
+            <button type="button" class="btn submit menubtn btngroup-btn-last" data-disclosure-trigger aria-controls="bundle-create-menu" aria-label="{{ 'Choose a bundle type'|t('bundle-builder') }}"></button>
+            <div id="bundle-create-menu" class="menu menu--disclosure">
                 <ul>
                     {% for bundleType in bundleTypes %}
                         <li>
-                            <a href="{{ url('bundle-builder/bundles/new', { typeId: bundleType.id }) }}">
+                            <a href="{{ url('bundle-builder/bundles/new', { typeId: bundleType.id }) }}" data-handle="{{ bundleType.handle }}" data-sites="{{ bundleType.siteSettings|keys|json_encode }}">
                                 {{ bundleType.name }}
                             </a>
                         </li>
@@ -26,5 +20,33 @@
                 </ul>
             </div>
         </div>
+    {% endif %}
+{% endblock %}
+
+{% block initJs %}
+    {{ parent() }}
+    {% if bundleTypes|length %}
+        const updateBundleCreateButtons = () => {
+            const group = document.querySelector('#bundle-create');
+            const links = [...document.querySelectorAll('#bundle-create-menu a')];
+            const siteId = Number(Craft.elementIndex.siteId);
+            const available = links.filter(link => {
+                const supported = JSON.parse(link.dataset.sites).includes(siteId);
+                link.closest('li').classList.toggle('hidden', !supported);
+                const url = new URL(link.href);
+                url.searchParams.set('siteId', siteId);
+                link.href = url.href;
+                return supported;
+            });
+            const selected = available.find(link => link.dataset.handle === Craft.elementIndex.$source?.data('handle')) ?? available[0];
+            group.classList.toggle('hidden', !selected);
+            group.querySelector('[data-disclosure-trigger]').classList.toggle('hidden', available.length < 2);
+            if (selected) {
+                group.querySelector('[data-bundle-primary]').href = selected.href;
+            }
+        };
+        Craft.elementIndex.on('selectSite', updateBundleCreateButtons);
+        Craft.elementIndex.on('selectSource', updateBundleCreateButtons);
+        updateBundleCreateButtons();
     {% endif %}
 {% endblock %}

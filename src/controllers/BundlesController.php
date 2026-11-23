@@ -13,10 +13,12 @@ use craft\helpers\Cp;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\ElementHelper;
 use craft\helpers\UrlHelper;
+use craft\models\Site;
 use craft\web\Controller;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\models\BundleProduct;
+use johnhenry\bundlebuilder\models\BundleType;
 use Throwable;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
@@ -106,11 +108,7 @@ class BundlesController extends Controller
 
         $this->requirePermission(self::PERMISSION_MANAGE_BUNDLES . ':' . $bundleType->uid);
 
-        $site = Cp::requestedSite();
-
-        if (!$site) {
-            throw new ForbiddenHttpException('User not authorized to edit content in any sites.');
-        }
+        $site = $this->_requestedBundleSite($bundleType);
 
         $user = static::currentUser();
 
@@ -240,6 +238,36 @@ class BundlesController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    private function _requestedBundleSite(BundleType $bundleType): Site
+    {
+        $sites = Craft::$app->getSites();
+        $editableSiteIds = $sites->getEditableSiteIds();
+        $supportedSiteIds = array_values(array_intersect(array_keys($bundleType->getSiteSettings()), $editableSiteIds));
+        if (empty($supportedSiteIds)) {
+            throw new ForbiddenHttpException('User not authorized to manage this bundle type in any sites.');
+        }
+
+        $siteId = $this->request->getParam('siteId');
+        if ($siteId !== null) {
+            $siteId = filter_var($siteId, FILTER_VALIDATE_INT);
+            $site = $siteId !== false && $siteId > 0 ? $sites->getSiteById($siteId) : null;
+            if ($site === null) {
+                throw new BadRequestHttpException('Invalid site ID.');
+            }
+            if (!in_array($site->id, $editableSiteIds, true)) {
+                throw new ForbiddenHttpException('User not authorized to edit content for this site.');
+            }
+        } else {
+            $site = Cp::requestedSite();
+        }
+
+        if ($site === null || !in_array($site->id, $supportedSiteIds, true)) {
+            $site = $sites->getSiteById($supportedSiteIds[0]);
+        }
+
+        return $site ?? throw new ForbiddenHttpException('No supported site is available.');
+    }
 
     /**
      * Returns a posted list of IDs as integers, dropping anything that isn't one.
