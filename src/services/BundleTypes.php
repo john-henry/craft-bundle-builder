@@ -140,14 +140,14 @@ class BundleTypes extends Component
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public function getProductIdsInSources(array $productIds, string|array $sources): array
+    public function getProductIdsInSources(array $productIds, string|array $sources, ?int $siteId = null): array
     {
         if (empty($productIds)) {
             return [];
         }
 
         if ($sources === '*') {
-            return Product::find()->id($productIds)->status(null)->ids();
+            return Product::find()->siteId($siteId)->id($productIds)->status(null)->ids();
         }
 
         $found = [];
@@ -159,7 +159,7 @@ class BundleTypes extends Component
                 continue;
             }
 
-            $query = Product::find()->status(null);
+            $query = Product::find()->siteId($siteId)->status(null);
 
             if (($source['type'] ?? null) === ElementSources::TYPE_CUSTOM && isset($source['condition'])) {
                 /** @var array{class: class-string<ElementConditionInterface>} $config */

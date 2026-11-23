@@ -30,6 +30,8 @@
                 name: 'products[' ~ index ~ '][productId]',
                 elementType: 'craft\\commerce\\elements\\Product',
                 sources: componentSources ?? '*',
+                criteria: { siteId: bundleProduct.siteId },
+                siteIds: bundleProduct.siteId ? [bundleProduct.siteId] : null,
                 limit: 1,
                 elements: product ? [product] : [],
                 disabledElementIds: disabledProductIds ?? [],

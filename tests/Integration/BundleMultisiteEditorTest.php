@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use craft\commerce\elements\Product;
 use craft\elements\User;
 use craft\helpers\Cp;
 use craft\helpers\ElementHelper;
@@ -11,6 +12,7 @@ use craft\web\View;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\controllers\BundlesController;
 use johnhenry\bundlebuilder\elements\Bundle;
+use johnhenry\bundlebuilder\fieldlayoutelements\BundleComponentsField;
 use johnhenry\bundlebuilder\models\BundleType;
 use johnhenry\bundlebuilder\models\BundleTypeSite;
 use yii\web\BadRequestHttpException;
@@ -137,4 +139,50 @@ it('refuses creation when the user has no access to a supported site', function 
 
     expect(fn() => $controller->actionCreate())->toThrow(ForbiddenHttpException::class, 'User not authorized to manage this bundle type in any sites.');
     expect(Bundle::find()->typeId($type->id)->siteId('*')->drafts(true)->status(null)->exists())->toBeFalse();
+});
+
+it('keeps component input and row requests in the bundle site', function (): void {
+    [$first, $second] = bundleEditorSites();
+    $type = bundleEditorType([$second]);
+    $product = Product::find()->siteId($second->id)->status(null)->one();
+    if ($product === null) {
+        $this->markTestSkipped('The secondary site needs a product for the row test.');
+    }
+    $bundle = new Bundle(['typeId' => $type->id, 'siteId' => $second->id]);
+    $bundle->setProducts([['productId' => $product->id, 'qty' => 1]]);
+    $view = Craft::$app->getView();
+    $view->startJsBuffer();
+    $html = (new BundleComponentsField())->inputHtml($bundle);
+    $js = (string) $view->clearJsBuffer(false);
+    expect($html)->toContain(htmlspecialchars($product->title, ENT_QUOTES));
+    expect($js)->toContain('"siteId":' . $second->id);
+    expect($js)->toContain('"criteria":{"siteId":' . $second->id . '}');
+
+    Craft::$app->getRequest()->setQueryParams(['site' => $first->handle]);
+    Craft::$app->getRequest()->setBodyParams([
+        'typeId' => $type->id,
+        'siteId' => $second->id,
+        'index' => 0,
+        'productIds' => [$product->id],
+    ]);
+    $response = (new BundlesController('bundles', BundleBuilder::getInstance()))->actionProductRows();
+    expect($response->data['html'])->toContain(htmlspecialchars($product->title, ENT_QUOTES));
+    expect($response->data['bodyHtml'])->toContain('"criteria":{"siteId":' . $second->id . '}');
+});
+
+it('validates component sources against products in the bundle site', function (): void {
+    [$first, $second] = bundleEditorSites();
+    $type = bundleEditorType([$second]);
+    $type->componentSources = ['productType:' . StringHelper::UUID()];
+    BundleBuilder::getInstance()->getBundleTypes()->saveBundleType($type);
+    $product = Product::find()->siteId($second->id)->status(null)->one();
+    if ($product === null) {
+        $this->markTestSkipped('The secondary site needs a product for the source test.');
+    }
+    $bundle = new Bundle(['typeId' => $type->id, 'siteId' => $second->id]);
+    $bundle->setProducts([['productId' => $product->id, 'qty' => 1]]);
+    $bundle->setScenario(Bundle::SCENARIO_LIVE);
+    $bundle->validate(['products']);
+
+    expect($bundle->getErrors('products'))->not->toBeEmpty();
 });

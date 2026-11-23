@@ -77,6 +77,7 @@ class BundleComponentsField extends BaseNativeField
                     'nextIndex' => count($element->getProducts()),
                     'namespace' => $view->getNamespace(),
                     'typeId' => $element->typeId,
+                    'siteId' => $element->siteId,
                     'sources' => $element->typeId ? $element->getType()->componentSources : '*',
                 ]),
             ));

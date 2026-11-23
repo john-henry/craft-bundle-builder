@@ -109,6 +109,9 @@
         openPicker: function() {
             var modal = Craft.createElementSelectorModal('craft\\commerce\\elements\\Product', {
                 sources: this.settings.sources === '*' ? null : this.settings.sources,
+                criteria: {siteId: this.settings.siteId},
+                siteIds: [this.settings.siteId],
+                showSiteMenu: false,
                 multiSelect: true,
                 disabledElementIds: this._currentProductIds(),
                 onSelect: function(elements) {
@@ -216,6 +219,7 @@
                     existingProductIds: this._currentProductIds(),
                     namespace: this.settings.namespace,
                     typeId: this.settings.typeId,
+                    siteId: this.settings.siteId,
                 },
             }).then(function(response) {
                 return response.data;

@@ -201,9 +201,14 @@ class BundlesController extends Controller
         $qty = max(1, (int)$this->request->getParam('qty', 1));
         $existingIds = $this->_intList($this->request->getParam('existingProductIds'));
         $bundleType = BundleBuilder::getInstance()->getBundleTypes()->getBundleTypeById($typeId);
+        if ($bundleType === null) {
+            throw new BadRequestHttpException('Bundle type not found.');
+        }
+        $site = $this->_requestedBundleSite($bundleType);
 
         // Only real products: not drafts, revisions or anything else by ID
         $productIds = Product::find()
+            ->siteId($site->id)
             ->id($this->_intList($this->request->getParam('productIds')) ?: [0])
             ->status(null)
             ->fixedOrder()
@@ -214,15 +219,15 @@ class BundlesController extends Controller
 
         // Rendered under the editor's namespace, so rows added in a slideout
         // post alongside the rows already there.
-        $html = $view->namespaceInputs(function() use ($view, $productIds, $allIds, $index, $qty, $bundleType): string {
+        $html = $view->namespaceInputs(function () use ($view, $productIds, $allIds, $index, $qty, $bundleType, $site): string {
             $rows = '';
 
             foreach ($productIds as $i => $productId) {
                 $rows .= $view->renderTemplate('bundle-builder/bundles/_product-row', [
                     'index' => $index + $i,
-                    'bundleProduct' => new BundleProduct(['productId' => $productId, 'qty' => $qty]),
+                    'bundleProduct' => new BundleProduct(['productId' => $productId, 'qty' => $qty, 'siteId' => $site->id]),
                     'disabledProductIds' => array_values(array_diff($allIds, [$productId])),
-                    'componentSources' => $bundleType->componentSources ?? '*',
+                    'componentSources' => $bundleType->componentSources,
                 ]);
             }
 

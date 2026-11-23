@@ -1440,8 +1440,8 @@ class Bundle extends Purchasable
         }
 
         $bundleTypes = BundleBuilder::getInstance()->getBundleTypes();
-        $existing = $bundleTypes->getProductIdsInSources($productIds, '*');
-        $allowed = $bundleTypes->getProductIdsInSources($existing, $sources);
+        $existing = $bundleTypes->getProductIdsInSources($productIds, '*', $this->siteId);
+        $allowed = $bundleTypes->getProductIdsInSources($existing, $sources, $this->siteId);
 
         foreach ($this->getProducts() as $bundleProduct) {
             if (in_array($bundleProduct->productId, $existing, true) && !in_array($bundleProduct->productId, $allowed, true)) {
