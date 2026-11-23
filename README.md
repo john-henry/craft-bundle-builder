@@ -27,6 +27,26 @@ Product bundles for Craft Commerce 5. Sell a hamper, a starter kit or a set of b
 
 Full documentation is at [johnhenry.ie/plugins/bundle-builder/docs](https://johnhenry.ie/plugins/bundle-builder/docs/getting-started/overview).
 
+## Project Config
+
+Bundle types are managed through Craft Project Config. Create and edit them in
+development with `allowAdminChanges` enabled, then commit the generated YAML and
+deploy it with the plugin update. Apply it using your usual `php craft up`
+deployment step; production can keep `allowAdminChanges` disabled. Bundle content
+and component selections remain editable content and are not exported.
+
+Type settings, field layouts, site settings, component sources and preview targets
+are tracked using stable UIDs. Existing bundle types are exported during the
+upgrade on the development environment; commit that YAML before deploying the
+upgrade elsewhere. If environments already have independently created bundle
+types with the same handle and different UIDs, reconcile those definitions and
+their existing bundle content before applying the new configuration.
+
+Deleting a bundle type in development also deletes its bundles when that config
+deletion is applied in another environment, matching the existing delete action.
+Review config deletions before deployment. Project Config rebuilds include the
+current bundle type definitions.
+
 ## Requirements
 
 - Craft CMS 5.0 or later

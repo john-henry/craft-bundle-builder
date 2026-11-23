@@ -55,7 +55,7 @@ class BundleBuilder extends BasePlugin
     /**
      * @var string The plugin's schema version.
      */
-    public string $schemaVersion = '1.0.6';
+    public string $schemaVersion = '1.0.7';
 
     // Public Methods
     // =========================================================================
