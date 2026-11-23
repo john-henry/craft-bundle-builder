@@ -34,6 +34,9 @@ development with `allowAdminChanges` enabled, then commit the generated YAML and
 deploy it with the plugin update. Apply it using your usual `php craft up`
 deployment step; production can keep `allowAdminChanges` disabled. Bundle content
 and component selections remain editable content and are not exported.
+When `allowAdminChanges` is disabled, the Bundle Types navigation item is hidden
+and direct access to all bundle type controller actions is forbidden, including
+the index and editor. Bundle content management retains its existing permissions.
 
 Type settings, field layouts, site settings, component sources and preview targets
 are tracked using stable UIDs. Existing bundle types are exported during the

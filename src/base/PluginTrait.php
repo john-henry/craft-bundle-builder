@@ -90,7 +90,7 @@ trait PluginTrait
             ],
         ];
 
-        if (Craft::$app->getUser()->getIsAdmin()) {
+        if (Craft::$app->getUser()->getIsAdmin() && Craft::$app->getConfig()->getGeneral()->allowAdminChanges) {
             $item['subnav']['bundle-types'] = [
                 'label' => Craft::t('bundle-builder', 'Bundle Types'),
                 'url' => 'bundle-builder/bundle-types',

@@ -54,7 +54,7 @@ class BundleTypesController extends Controller
      */
     public function actionIndex(): Response
     {
-        $this->requireAdmin(false);
+        $this->requireAdmin();
 
         return $this->renderTemplate('bundle-builder/bundle-types/index', [
             'bundleTypes' => BundleBuilder::getInstance()->getBundleTypes()->getAllBundleTypes(),
@@ -75,7 +75,7 @@ class BundleTypesController extends Controller
      */
     public function actionEdit(?int $bundleTypeId = null, ?BundleType $bundleType = null): Response
     {
-        $this->requireAdmin(false);
+        $this->requireAdmin();
 
         if ($bundleType === null) {
             if ($bundleTypeId) {
