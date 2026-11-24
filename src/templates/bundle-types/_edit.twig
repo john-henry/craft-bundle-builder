@@ -7,7 +7,7 @@
     { label: 'Bundle Types'|t('bundle-builder'), url: url('bundle-builder/bundle-types') },
 ] %}
 
-{% set fullPageForm = true %}
+{% set fullPageForm = not readOnly %}
 {% set selectedTab = 'settings' %}
 
 {% set tabs = {
@@ -16,9 +16,15 @@
 } %}
 
 {% block content %}
-    <input type="hidden" name="action" value="bundle-builder/bundle-types/save">
-    {{ redirectInput('bundle-builder/bundle-types') }}
-    {% if bundleType.id %}<input type="hidden" name="id" value="{{ bundleType.id }}">{% endif %}
+    {% if readOnly %}
+        <p class="warning with-icon">
+            {{ 'Bundle types can’t be changed in this environment, as administrative changes are disallowed.'|t('bundle-builder') }}
+        </p>
+    {% else %}
+        <input type="hidden" name="action" value="bundle-builder/bundle-types/save">
+        {{ redirectInput('bundle-builder/bundle-types') }}
+        {% if bundleType.id %}<input type="hidden" name="id" value="{{ bundleType.id }}">{% endif %}
+    {% endif %}
 
     <div id="settings">
         {{ forms.textField({
@@ -27,6 +33,7 @@
             instructions: 'What this bundle type will be called in the control panel.'|t('bundle-builder'),
             id: 'name',
             name: 'name',
+            disabled: readOnly,
             value: bundleType.name,
             errors: bundleType.getErrors('name'),
             autofocus: true,
@@ -39,6 +46,7 @@
             id: 'handle',
             class: 'code',
             name: 'handle',
+            disabled: readOnly,
             value: bundleType.handle,
             errors: bundleType.getErrors('handle'),
             required: true,
@@ -50,6 +58,7 @@
             id: 'skuFormat',
             class: 'code',
             name: 'skuFormat',
+            disabled: readOnly,
             value: bundleType.skuFormat ?? '{slug}',
             errors: bundleType.getErrors('skuFormat'),
         }) }}
@@ -60,6 +69,7 @@
             id: 'descriptionFormat',
             class: 'code',
             name: 'descriptionFormat',
+            disabled: readOnly,
             value: bundleType.descriptionFormat,
             errors: bundleType.getErrors('descriptionFormat'),
         }) }}
@@ -69,6 +79,7 @@
             instructions: 'Whether the slug field is shown when editing bundles of this type.'|t('bundle-builder'),
             id: 'showSlugField',
             name: 'showSlugField',
+            disabled: readOnly,
             on: bundleType.showSlugField,
         }) }}
 
@@ -77,6 +88,7 @@
             instructions: 'Whether a revision is saved each time a bundle of this type is saved, so earlier versions can be viewed and reverted to.'|t('bundle-builder'),
             id: 'enableVersioning',
             name: 'enableVersioning',
+            disabled: readOnly,
             on: bundleType.enableVersioning,
         }) }}
 
@@ -85,6 +97,7 @@
             instructions: 'Which sources can bundle components be picked from?'|t('bundle-builder'),
             id: 'componentSources',
             name: 'componentSources',
+            disabled: readOnly,
             options: componentSourceOptions,
             values: bundleType.componentSources,
             showAllOption: true,
@@ -95,6 +108,7 @@
             instructions: 'How bundles of this type are taxed. **Composite supply** (default): the whole bundle is taxed at one rate, using the store’s default tax category; use when one element is principal and the others are ancillary. **Multiple supply**: the price is apportioned across components and each is taxed at its own product’s tax category; use for independent items sold together (e.g. a bag + a collection service at different tax rates).'|t('bundle-builder'),
             id: 'taxTreatment',
             name: 'taxTreatment',
+            disabled: readOnly,
             value: bundleType.taxTreatment,
             options: [
                 { value: 'composite', label: 'Composite supply (single rate)'|t('bundle-builder') },
@@ -118,6 +132,10 @@
                         on: brandNewBundleType or siteSettings,
                         value: site.id,
                         small: true,
+                        disabled: readOnly,
+                        containerAttributes: {
+                            aria: { label: 'Enable for {site}'|t('bundle-builder', { site: site.name|t('site') }) },
+                        },
                     }),
                     uriFormat: {
                         value: siteSettings ? siteSettings.uriFormat,
@@ -136,6 +154,7 @@
             label: 'Site Settings'|t('app'),
             instructions: 'Choose which sites this bundle type should be available in, and configure the site-specific settings.'|t('bundle-builder'),
             id: 'sites',
+            static: readOnly,
             name: 'sites',
             cols: {
                 heading: {
@@ -179,6 +198,7 @@
             label: 'Preview Targets'|t('app'),
             instructions: 'Locations that should be available for previewing bundles of this type. Use `{url}` for the bundle’s own URL.'|t('bundle-builder'),
             id: 'previewTargets',
+            static: readOnly,
             name: 'previewTargets',
             cols: {
                 label: {
@@ -203,11 +223,12 @@
     <div id="fieldLayout" class="hidden">
         {{ forms.fieldLayoutDesignerField({
             fieldLayout: bundleType.getBundleFieldLayout(),
+            disabled: readOnly,
         }) }}
     </div>
 {% endblock %}
 
-{% if not bundleType.handle %}
+{% if not bundleType.handle and not readOnly %}
     {% js %}
         new Craft.HandleGenerator('#name', '#handle');
     {% endjs %}

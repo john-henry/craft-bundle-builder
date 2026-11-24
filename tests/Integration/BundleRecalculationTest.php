@@ -36,6 +36,37 @@ describe('BundlePricing::getBundleIdsForProduct()', function () {
         expect(BundleBuilder::getInstance()->getBundlePricing()->getBundleIdsForProduct($unused->id))
             ->toBe([]);
     });
+
+    // The test database has no table prefix, so the query's table alias only
+    // matters once a prefix is set. Temporary copies of the two tables it reads
+    // stand in for prefixed ones: they belong to this connection, so they need
+    // no cleanup beyond the drop, and creating them doesn't end the test's
+    // transaction.
+    it('works on a database with a table prefix', function () {
+        $type = makeBundleType('Auto', 'auto' . StringHelper::randomString(6));
+        $component = makeProduct(10.0);
+        $bundle = makeSavedBundle($type, [['product' => $component, 'qty' => 1]]);
+
+        $db = Craft::$app->getDb();
+        $prefix = $db->tablePrefix;
+
+        foreach (['elements', 'bundlebuilder_products'] as $table) {
+            $db->createCommand("CREATE TEMPORARY TABLE [[bbtest_$table]] AS SELECT * FROM {{%$table}}")->execute();
+        }
+
+        try {
+            $db->tablePrefix = 'bbtest_';
+
+            expect(BundleBuilder::getInstance()->getBundlePricing()->getBundleIdsForProduct($component->id))
+                ->toBe([$bundle->id]);
+        } finally {
+            $db->tablePrefix = $prefix;
+
+            foreach (['elements', 'bundlebuilder_products'] as $table) {
+                $db->createCommand("DROP TEMPORARY TABLE IF EXISTS [[bbtest_$table]]")->execute();
+            }
+        }
+    });
 });
 
 // ---------------------------------------------------------------------------

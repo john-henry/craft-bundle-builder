@@ -76,11 +76,13 @@ class Install extends Migration
      *
      * @return bool Whether the migration reverted successfully.
      * @throws Exception|InvalidConfigException if a delete or drop statement fails.
+     * @throws Throwable if Project Config can't be updated.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.1.0
      */
     public function safeDown(): bool
     {
+        $this->_removeBundleTypesFromProjectConfig();
         $this->delete('{{%elements}}', ['type' => Bundle::class]);
         $this->delete('{{%fieldlayouts}}', ['type' => Bundle::class]);
         $this->_deleteApportionedTaxCategory();
@@ -131,6 +133,28 @@ class Install extends Migration
             $service->saveTaxCategory($taxCategory);
         } catch (Throwable $e) {
             Craft::warning('Could not create the apportioned tax category: ' . $e->getMessage(), 'bundle-builder');
+        }
+    }
+
+    /**
+     * Removes the bundle type definitions from Project Config. The tables are
+     * dropped straight after, so the config handlers stay quiet.
+     *
+     * @return void
+     * @throws Throwable if Project Config can't be updated.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _removeBundleTypesFromProjectConfig(): void
+    {
+        $projectConfig = Craft::$app->getProjectConfig();
+        $muteEvents = $projectConfig->muteEvents;
+        $projectConfig->muteEvents = true;
+
+        try {
+            $projectConfig->remove('bundle-builder');
+        } finally {
+            $projectConfig->muteEvents = $muteEvents;
         }
     }
 

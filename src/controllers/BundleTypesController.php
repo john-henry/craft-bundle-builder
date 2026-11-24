@@ -26,7 +26,8 @@ use yii\web\Response;
  *
  * Handles the control panel CRUD screens for bundle types: listing, editing,
  * saving, and deleting. All actions require an admin account, since bundle types
- * define field layouts and URL settings.
+ * define field layouts and URL settings. Saving and deleting also need
+ * `allowAdminChanges`; without it the screens are read-only.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.0.0
@@ -58,6 +59,7 @@ class BundleTypesController extends Controller
 
         return $this->renderTemplate('bundle-builder/bundle-types/index', [
             'bundleTypes' => BundleBuilder::getInstance()->getBundleTypes()->getAllBundleTypes(),
+            'readOnly' => $this->_isReadOnly(),
         ]);
     }
 
@@ -67,7 +69,7 @@ class BundleTypesController extends Controller
      * @param int|null $bundleTypeId The bundle type ID, or null to create a new one.
      * @param BundleType|null $bundleType The bundle type being edited, when set from a failed save.
      * @return Response The rendering result.
-     * @throws ForbiddenHttpException if the user is not an admin.
+     * @throws ForbiddenHttpException if the user is not an admin, or a new type is asked for while the screens are read-only.
      * @throws NotFoundHttpException if the bundle type can't be found.
      * @throws InvalidConfigException
      * @author John Henry Donovan <info@johnhenry.ie>
@@ -88,6 +90,12 @@ class BundleTypesController extends Controller
             }
         }
 
+        $readOnly = $this->_isReadOnly();
+
+        if ($readOnly && !$bundleType->id) {
+            throw new ForbiddenHttpException(Craft::t('bundle-builder', 'Bundle types can’t be created while administrative changes are disallowed.'));
+        }
+
         $title = $bundleType->id
             ? trim($bundleType->name) ?: Craft::t('bundle-builder', 'Edit Bundle Type')
             : Craft::t('bundle-builder', 'Create a Bundle Type');
@@ -96,6 +104,7 @@ class BundleTypesController extends Controller
             'bundleTypeId' => $bundleTypeId,
             'bundleType' => $bundleType,
             'title' => $title,
+            'readOnly' => $readOnly,
             'componentSourceOptions' => (new ProductsField())->getSourceOptions(),
         ]);
     }
@@ -202,6 +211,19 @@ class BundleTypesController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Returns whether bundle types can only be viewed: they live in Project
+     * Config, which can't be changed while `allowAdminChanges` is off.
+     *
+     * @return bool Whether the bundle type screens are read-only.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _isReadOnly(): bool
+    {
+        return !Craft::$app->getConfig()->getGeneral()->allowAdminChanges;
+    }
 
     /**
      * Builds the bundle type's site settings models from the posted data.

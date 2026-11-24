@@ -6,9 +6,13 @@
 
 namespace johnhenry\bundlebuilder\models;
 
+use Craft;
 use craft\base\Model;
 use craft\behaviors\FieldLayoutBehavior;
 use craft\helpers\ArrayHelper;
+use craft\helpers\Db;
+use craft\helpers\ProjectConfig as ProjectConfigHelper;
+use craft\helpers\StringHelper;
 use craft\helpers\UrlHelper;
 use craft\models\FieldLayout;
 use craft\validators\HandleValidator;
@@ -208,6 +212,69 @@ class BundleType extends Model
         foreach ($this->_siteSettings as $settings) {
             $settings->setBundleType($this);
         }
+    }
+
+    /**
+     * Returns the bundle type's Project Config definition. Sites and the field
+     * layout are keyed by UID, as IDs differ between environments.
+     *
+     * A type with no site settings is enabled on every site, without URLs.
+     *
+     * @return array<string, mixed> The config.
+     * @throws InvalidConfigException if the field layout or a site can't be resolved.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function getConfig(): array
+    {
+        $config = [
+            'name' => $this->name,
+            'handle' => $this->handle,
+            'skuFormat' => $this->skuFormat,
+            'descriptionFormat' => $this->descriptionFormat,
+            'showSlugField' => $this->showSlugField,
+            'enableVersioning' => $this->enableVersioning,
+            'componentSources' => $this->componentSources,
+            'taxTreatment' => $this->taxTreatment,
+            'previewTargets' => ProjectConfigHelper::packAssociativeArray(array_values($this->previewTargets)),
+            'fieldLayouts' => [],
+            'siteSettings' => [],
+        ];
+
+        $fieldLayout = $this->getBundleFieldLayout();
+        $fieldLayoutConfig = $fieldLayout->getConfig();
+
+        if ($fieldLayoutConfig) {
+            $fieldLayoutUid = $this->fieldLayoutId ? Db::uidById('{{%fieldlayouts}}', $this->fieldLayoutId) : null;
+            $fieldLayoutUid ??= $fieldLayout->uid ?? StringHelper::UUID();
+            $fieldLayout->uid = $fieldLayoutUid;
+            $config['fieldLayouts'][$fieldLayoutUid] = $fieldLayoutConfig;
+        }
+
+        $allSiteSettings = $this->getSiteSettings();
+
+        if (empty($allSiteSettings)) {
+            foreach (Craft::$app->getSites()->getAllSites() as $site) {
+                $allSiteSettings[] = new BundleTypeSite(['siteId' => $site->id]);
+            }
+        }
+
+        foreach ($allSiteSettings as $siteSettings) {
+            $siteUid = $siteSettings->siteId ? Db::uidById('{{%sites}}', $siteSettings->siteId) : null;
+
+            if ($siteUid === null) {
+                throw new InvalidConfigException("Invalid site ID: $siteSettings->siteId");
+            }
+
+            $config['siteSettings'][$siteUid] = [
+                'hasUrls' => $siteSettings->hasUrls,
+                'uriFormat' => $siteSettings->hasUrls ? $siteSettings->uriFormat : null,
+                'template' => $siteSettings->hasUrls ? $siteSettings->template : null,
+                'enabledByDefault' => $siteSettings->enabledByDefault,
+            ];
+        }
+
+        return $config;
     }
 
     /**

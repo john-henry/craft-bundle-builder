@@ -105,10 +105,13 @@
 
         // Opens Craft's product selector, as a Products field's add button
         // does. A fresh modal each time, so the products already in the rows,
-        // saved or not, are the ones greyed out.
+        // saved or not, are the ones greyed out. Products are picked in the
+        // bundle's own site, so one that isn't in that site can't be added.
         openPicker: function() {
             var modal = Craft.createElementSelectorModal('craft\\commerce\\elements\\Product', {
                 sources: this.settings.sources === '*' ? null : this.settings.sources,
+                criteria: {siteId: this.settings.siteId},
+                showSiteMenu: false,
                 multiSelect: true,
                 disabledElementIds: this._currentProductIds(),
                 onSelect: function(elements) {
@@ -216,6 +219,7 @@
                     existingProductIds: this._currentProductIds(),
                     namespace: this.settings.namespace,
                     typeId: this.settings.typeId,
+                    siteId: this.settings.siteId,
                 },
             }).then(function(response) {
                 return response.data;

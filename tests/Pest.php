@@ -24,6 +24,7 @@ use craft\db\Query;
 use craft\helpers\StringHelper;
 use craft\models\GqlSchema;
 use craft\services\Gql as GqlService;
+use craft\services\ProjectConfig;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\enums\PricingStrategy;
@@ -50,6 +51,7 @@ beforeEach(function () {
     // Swap the Craft cache to a fresh in-memory store so each test starts with an
     // empty cache and avoids FileCache filesystem noise.
     Craft::$app->set('cache', new ArrayCache());
+    resetProjectConfig();
     resetBundleTypesCache();
 })->in('Integration');
 
@@ -71,16 +73,46 @@ function resetBundleTypesCache(): void
 }
 
 /**
+ * Reloads Project Config from the database and stops it writing YAML.
+ *
+ * Bundle types are saved through Project Config, which keeps its working copy
+ * in memory: without a reload, a type saved by one test would still be in the
+ * config after RefreshesDatabase rolled its rows back. reset() registers the
+ * service's own change listeners again, so they're detached first or every
+ * handler would run once per test so far.
+ */
+function resetProjectConfig(): void
+{
+    $projectConfig = Craft::$app->getProjectConfig();
+    $projectConfig->writeYamlAutomatically = false;
+
+    foreach ([ProjectConfig::EVENT_ADD_ITEM, ProjectConfig::EVENT_UPDATE_ITEM, ProjectConfig::EVENT_REMOVE_ITEM] as $event) {
+        $projectConfig->off($event, [$projectConfig, 'handleChangeEvent']);
+    }
+
+    $projectConfig->reset();
+}
+
+/**
  * Creates (or reuses) a bundle type by handle. Upsert-style; any existing
- * record with the same handle (e.g. left behind by CP usage outside of tests)
- * is dropped first so tests run idempotently against any DB state. Inside the
- * current test's transaction the DELETE is itself rolled back at teardown.
+ * type with the same handle (e.g. left behind by CP usage outside of tests)
+ * is dropped first so tests run idempotently against any DB state: through
+ * the service when Project Config knows it, and by its row for one that
+ * predates Project Config. Inside the current test's transaction the DELETE is
+ * itself rolled back at teardown.
  */
 function makeBundleType(
     string $name = 'Starter Kit',
     string $handle = 'starterKit',
     string $taxTreatment = TaxTreatment::Composite->value,
 ): BundleType {
+    resetBundleTypesCache();
+    $existing = BundleBuilder::getInstance()->getBundleTypes()->getBundleTypeByHandle($handle);
+
+    if ($existing !== null) {
+        BundleBuilder::getInstance()->getBundleTypes()->deleteBundleTypeById($existing->id);
+    }
+
     BundleTypeRecord::deleteAll(['handle' => $handle]);
     resetBundleTypesCache();
 
@@ -382,3 +414,13 @@ function runBundleGql(GqlSchema $schema, string $query): array
     // Debug mode, so validation errors come back instead of an empty result
     return withFileCacheWarningsSuppressed(static fn(): array => $gql->executeQuery($schema, $query, debugMode: true));
 }
+
+// craft-pest exports the debug toolbar's log target after every test, and that
+// target holds every message since the process started, so each export
+// re-serialises the whole run. Nothing here benchmarks.
+uses()->beforeEach(function() {
+    if (\craft\debug\Module::getInstance() !== null) {
+        unset(\Craft::$app->getLog()->targets['debug']);
+        \craft\debug\Module::setInstance(null);
+    }
+})->in('Integration');
