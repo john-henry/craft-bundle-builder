@@ -7,12 +7,20 @@
 ] %}
 
 {% block actionButton %}
-    <a href="{{ url('bundle-builder/bundle-types/new') }}" class="btn submit add icon">
-        {{ 'New bundle type'|t('bundle-builder') }}
-    </a>
+    {% if not readOnly %}
+        <a href="{{ url('bundle-builder/bundle-types/new') }}" class="btn submit add icon">
+            {{ 'New bundle type'|t('bundle-builder') }}
+        </a>
+    {% endif %}
 {% endblock %}
 
 {% block content %}
+    {% if readOnly %}
+        <p class="warning with-icon">
+            {{ 'Bundle types can’t be changed in this environment, as administrative changes are disallowed.'|t('bundle-builder') }}
+        </p>
+    {% endif %}
+
     <p id="nobundletypes"{% if bundleTypes|length %} class="hidden"{% endif %}>
         {{ 'No bundle types exist yet.'|t('bundle-builder') }}
     </p>
@@ -23,7 +31,9 @@
                 <tr>
                     <th scope="col">{{ 'Name'|t('bundle-builder') }}</th>
                     <th scope="col">{{ 'Handle'|t('bundle-builder') }}</th>
-                    <td class="thin"></td>
+                    {% if not readOnly %}
+                        <td class="thin"></td>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -35,9 +45,11 @@
                         <td data-title="{{ 'Handle'|t('bundle-builder') }}">
                             <code>{{ bundleType.handle }}</code>
                         </td>
-                        <td class="thin">
-                            <a class="delete icon" title="{{ 'Delete'|t('app') }}" role="button"></a>
-                        </td>
+                        {% if not readOnly %}
+                            <td class="thin">
+                                <a class="delete icon" title="{{ 'Delete'|t('app') }}" role="button"></a>
+                            </td>
+                        {% endif %}
                     </tr>
                 {% endfor %}
             </tbody>
@@ -45,11 +57,13 @@
     {% endif %}
 {% endblock %}
 
-{% js %}
-    new Craft.AdminTable({
-        tableSelector: '#bundle-types',
-        noItemsSelector: '#nobundletypes',
-        deleteAction: 'bundle-builder/bundle-types/delete',
-        confirmDeleteMessage: '{{ 'Are you sure you want to delete “{name}” and all of its bundles?'|t('bundle-builder')|e('js') }}',
-    });
-{% endjs %}
+{% if not readOnly %}
+    {% js %}
+        new Craft.AdminTable({
+            tableSelector: '#bundle-types',
+            noItemsSelector: '#nobundletypes',
+            deleteAction: 'bundle-builder/bundle-types/delete',
+            confirmDeleteMessage: '{{ 'Are you sure you want to delete “{name}” and all of its bundles?'|t('bundle-builder')|e('js') }}',
+        });
+    {% endjs %}
+{% endif %}

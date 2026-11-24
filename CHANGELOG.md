@@ -1,5 +1,25 @@
 # Release Notes for Bundle Builder
 
+## 1.3.0 - 2026-11-24
+
+> [!IMPORTANT]
+> Update your development environment first and commit the Project Config changes before you deploy. On a multi-site install, run the queue after updating so your existing bundles reach their other sites.
+
+### Added
+- Bundle types are now stored in Project Config, so you can set them up in development and deploy them with `allowAdminChanges` off. Thanks to [Phill Morgan](https://github.com/phillmorgan28).
+- The bundles index has a site menu on multi-site installs.
+
+### Changed
+- Bundles are now saved to every site their bundle type is enabled for, and bundle queries return the bundles for the current site.
+- With `allowAdminChanges` off, the Bundle Types screens are read-only.
+- Bundle components are now picked from the products in the bundle's own site.
+
+### Fixed
+- Creating a bundle no longer fails when its bundle type isn't enabled for the site you're viewing. Thanks to [Phill Morgan](https://github.com/phillmorgan28).
+- The "New bundle" menu no longer offers bundle types that aren't enabled for the selected site.
+- The switch that turns a bundle type on for a site, and the button that opens the "New bundle" menu, now have names for screen readers.
+- Saving a product or variant used in a bundle no longer fails on a database with a table prefix, and automatic bundle prices are kept up to date there again. Thanks to [Phill Morgan](https://github.com/phillmorgan28).
+
 ## 1.2.0 - 2026-09-25
 
 ### Added

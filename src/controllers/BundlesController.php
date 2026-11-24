@@ -13,11 +13,14 @@ use craft\helpers\Cp;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\ElementHelper;
 use craft\helpers\UrlHelper;
+use craft\models\Site;
 use craft\web\Controller;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
 use johnhenry\bundlebuilder\models\BundleProduct;
+use johnhenry\bundlebuilder\models\BundleType;
 use Throwable;
+use yii\base\InvalidConfigException;
 use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\web\Response;
@@ -83,7 +86,7 @@ class BundlesController extends Controller
      *
      * @return Response|null The response, or null on a model failure.
      * @throws BadRequestHttpException if no editable bundle type exists.
-     * @throws ForbiddenHttpException if the user can't create bundles.
+     * @throws ForbiddenHttpException if the user can't create bundles, or edit any site the type is enabled for.
      * @throws Throwable if the draft can't be saved.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -106,12 +109,7 @@ class BundlesController extends Controller
 
         $this->requirePermission(self::PERMISSION_MANAGE_BUNDLES . ':' . $bundleType->uid);
 
-        $site = Cp::requestedSite();
-
-        if (!$site) {
-            throw new ForbiddenHttpException('User not authorized to edit content in any sites.');
-        }
-
+        $site = $this->_siteForBundleType($bundleType);
         $user = static::currentUser();
 
         $bundle = Craft::createObject(Bundle::class);
@@ -174,7 +172,8 @@ class BundlesController extends Controller
      *
      * @return Response The rendered rows, head HTML, and body HTML.
      * @throws BadRequestHttpException if the request isn't an AJAX request, or the namespace isn't a form namespace.
-     * @throws ForbiddenHttpException if the user can't manage bundles of the posted type.
+     * @throws ForbiddenHttpException if the user can't manage bundles of the posted type, or edit any site it's enabled for.
+     * @throws InvalidConfigException
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
@@ -203,9 +202,11 @@ class BundlesController extends Controller
         $qty = max(1, (int)$this->request->getParam('qty', 1));
         $existingIds = $this->_intList($this->request->getParam('existingProductIds'));
         $bundleType = BundleBuilder::getInstance()->getBundleTypes()->getBundleTypeById($typeId);
+        $siteId = $this->_siteForBundleType($bundleType, (int)$this->request->getParam('siteId') ?: null)->id;
 
         // Only real products: not drafts, revisions or anything else by ID
         $productIds = Product::find()
+            ->siteId($siteId)
             ->id($this->_intList($this->request->getParam('productIds')) ?: [0])
             ->status(null)
             ->fixedOrder()
@@ -216,13 +217,13 @@ class BundlesController extends Controller
 
         // Rendered under the editor's namespace, so rows added in a slideout
         // post alongside the rows already there.
-        $html = $view->namespaceInputs(function() use ($view, $productIds, $allIds, $index, $qty, $bundleType): string {
+        $html = $view->namespaceInputs(function() use ($view, $productIds, $allIds, $index, $qty, $bundleType, $siteId): string {
             $rows = '';
 
             foreach ($productIds as $i => $productId) {
                 $rows .= $view->renderTemplate('bundle-builder/bundles/_product-row', [
                     'index' => $index + $i,
-                    'bundleProduct' => new BundleProduct(['productId' => $productId, 'qty' => $qty]),
+                    'bundleProduct' => new BundleProduct(['productId' => $productId, 'qty' => $qty, 'siteId' => $siteId]),
                     'disabledProductIds' => array_values(array_diff($allIds, [$productId])),
                     'componentSources' => $bundleType->componentSources ?? '*',
                 ]);
@@ -240,6 +241,42 @@ class BundlesController extends Controller
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Returns the site a bundle of the given type is created or edited in: the
+     * asked-for site when the type is enabled for it and the user can edit it,
+     * else the first such site.
+     *
+     * @param BundleType $bundleType The bundle type.
+     * @param int|null $siteId The site asked for, or null for the site requested in the control panel.
+     * @return Site The site.
+     * @throws ForbiddenHttpException if the user can't edit any site the type is enabled for.
+     * @throws InvalidConfigException
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _siteForBundleType(BundleType $bundleType, ?int $siteId = null): Site
+    {
+        $siteSettings = $bundleType->getSiteSettings();
+        $sites = array_values(array_filter(
+            Craft::$app->getSites()->getEditableSites(),
+            static fn(Site $site): bool => isset($siteSettings[$site->id]),
+        ));
+
+        if (empty($sites)) {
+            throw new ForbiddenHttpException(Craft::t('bundle-builder', 'User not authorized to manage bundles of this type in any site.'));
+        }
+
+        $siteId ??= Cp::requestedSite()?->id;
+
+        foreach ($sites as $site) {
+            if ($site->id === $siteId) {
+                return $site;
+            }
+        }
+
+        return $sites[0];
+    }
 
     /**
      * Returns a posted list of IDs as integers, dropping anything that isn't one.

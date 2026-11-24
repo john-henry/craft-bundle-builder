@@ -51,7 +51,7 @@ class BundleBuilder extends BasePlugin
     /**
      * @var string The plugin's schema version.
      */
-    public string $schemaVersion = '1.0.6';
+    public string $schemaVersion = '1.0.7';
 
     // Public Methods
     // =========================================================================
@@ -77,6 +77,7 @@ class BundleBuilder extends BasePlugin
         $this->_registerNavigationElements();
         $this->_registerPermissions();
         $this->_registerPricingRecalculation();
+        $this->_registerProjectConfig();
         $this->_registerTaxAdjuster();
         $this->_registerTwigVariable();
 

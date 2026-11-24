@@ -30,6 +30,8 @@ use craft\models\FieldLayout;
 use craft\services\Elements;
 use craft\services\Fields;
 use craft\services\Gql;
+use craft\services\ProjectConfig;
+use craft\services\Sites;
 use craft\services\UserPermissions;
 use craft\web\twig\variables\CraftVariable;
 use craft\web\UrlManager;
@@ -48,6 +50,7 @@ use johnhenry\bundlebuilder\jobs\RecalculateBundlePrices;
 use johnhenry\bundlebuilder\links\Bundle as BundleLink;
 use johnhenry\bundlebuilder\nodetypes\Bundle as BundleNodeType;
 use johnhenry\bundlebuilder\records\BundleProductRecord;
+use johnhenry\bundlebuilder\services\BundleTypes;
 use johnhenry\bundlebuilder\variables\BundleBuilderVariable;
 use johnhenry\containerdeposits\events\DefineLineItemContentsEvent;
 use johnhenry\containerdeposits\services\DepositCartService;
@@ -349,6 +352,28 @@ trait PluginTrait
                 $event->fields[] = PurchasableFreeShippingField::class;
             }
         );
+    }
+
+    /**
+     * Keeps bundle types in step with Project Config: applies added, changed
+     * and removed definitions, includes them in a rebuild, and drops a deleted
+     * site from them.
+     *
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _registerProjectConfig(): void
+    {
+        $bundleTypes = $this->getBundleTypes();
+
+        Craft::$app->getProjectConfig()
+            ->onAdd(BundleTypes::CONFIG_BUNDLE_TYPES_KEY . '.{uid}', [$bundleTypes, 'handleChangedBundleType'])
+            ->onUpdate(BundleTypes::CONFIG_BUNDLE_TYPES_KEY . '.{uid}', [$bundleTypes, 'handleChangedBundleType'])
+            ->onRemove(BundleTypes::CONFIG_BUNDLE_TYPES_KEY . '.{uid}', [$bundleTypes, 'handleDeletedBundleType']);
+
+        Event::on(ProjectConfig::class, ProjectConfig::EVENT_REBUILD, [$bundleTypes, 'handleRebuildConfig']);
+        Event::on(Sites::class, Sites::EVENT_AFTER_DELETE_SITE, [$bundleTypes, 'pruneDeletedSite']);
     }
 
     /**

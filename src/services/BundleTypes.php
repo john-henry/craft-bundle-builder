@@ -10,25 +10,37 @@ use Craft;
 use craft\base\Component;
 use craft\commerce\elements\Product;
 use craft\db\Query;
+use craft\db\Table;
 use craft\elements\conditions\ElementConditionInterface;
+use craft\events\ConfigEvent;
+use craft\events\DeleteSiteEvent;
+use craft\events\RebuildConfigEvent;
 use craft\helpers\Db;
 use craft\helpers\ElementHelper;
 use craft\helpers\Json;
+use craft\helpers\ProjectConfig as ProjectConfigHelper;
+use craft\helpers\StringHelper;
+use craft\models\FieldLayout;
+use craft\queue\jobs\ResaveElements;
 use craft\services\ElementSources;
 use johnhenry\bundlebuilder\controllers\BundlesController;
 use johnhenry\bundlebuilder\elements\Bundle;
+use johnhenry\bundlebuilder\enums\TaxTreatment;
 use johnhenry\bundlebuilder\models\BundleType;
 use johnhenry\bundlebuilder\models\BundleTypeSite;
 use johnhenry\bundlebuilder\records\BundleTypeRecord;
 use johnhenry\bundlebuilder\records\BundleTypeSiteRecord;
 use Throwable;
 use yii\base\Exception;
+use yii\base\InvalidConfigException;
+use yii\base\NotSupportedException;
 
 /**
  * Bundle types service.
  *
  * Reads, saves and deletes {@see BundleType} models with their field layout and
- * site settings. Results are memoized per request.
+ * site settings. Definitions are stored in Project Config, and the config
+ * handlers write the database rows. Results are memoized per request.
  *
  * @property-read BundleType[] $allBundleTypes
  * @property-read BundleType[] $editableBundleTypes
@@ -38,6 +50,14 @@ use yii\base\Exception;
  */
 class BundleTypes extends Component
 {
+    // Const Properties
+    // =========================================================================
+
+    /**
+     * @var string The Project Config path bundle types are stored under, keyed by UID.
+     */
+    public const CONFIG_BUNDLE_TYPES_KEY = 'bundle-builder.bundleTypes';
+
     // Private Properties
     // =========================================================================
 
@@ -136,18 +156,19 @@ class BundleTypes extends Component
      *
      * @param int[] $productIds The product IDs to check.
      * @param string|string[] $sources `*` for all sources, or a list of source keys.
+     * @param int|null $siteId The site to look the products up in, or null for the current site.
      * @return int[] The IDs that fall within a source.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.2.0
      */
-    public function getProductIdsInSources(array $productIds, string|array $sources): array
+    public function getProductIdsInSources(array $productIds, string|array $sources, ?int $siteId = null): array
     {
         if (empty($productIds)) {
             return [];
         }
 
         if ($sources === '*') {
-            return Product::find()->id($productIds)->status(null)->ids();
+            return Product::find()->siteId($siteId)->id($productIds)->status(null)->ids();
         }
 
         $found = [];
@@ -159,7 +180,7 @@ class BundleTypes extends Component
                 continue;
             }
 
-            $query = Product::find()->status(null);
+            $query = Product::find()->siteId($siteId)->status(null);
 
             if (($source['type'] ?? null) === ElementSources::TYPE_CUSTOM && isset($source['condition'])) {
                 /** @var array{class: class-string<ElementConditionInterface>} $config */
@@ -217,6 +238,7 @@ class BundleTypes extends Component
      * @param bool $runValidation Whether the bundle type should be validated.
      * @return bool Whether the bundle type was saved successfully.
      * @throws Throwable if the field layout or records can't be saved.
+     * @throws NotSupportedException if Project Config is read-only.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
@@ -226,36 +248,92 @@ class BundleTypes extends Component
             return false;
         }
 
-        $isNew = !$bundleType->id;
+        if ($bundleType->id) {
+            $bundleType->uid = Db::uidById(BundleTypeRecord::tableName(), $bundleType->id);
 
+            if ($bundleType->uid === null) {
+                throw new Exception("Invalid bundle type ID: $bundleType->id");
+            }
+        }
+
+        $bundleType->uid ??= StringHelper::UUID();
+
+        Craft::$app->getProjectConfig()->set(
+            self::CONFIG_BUNDLE_TYPES_KEY . '.' . $bundleType->uid,
+            $bundleType->getConfig(),
+            "Save the “{$bundleType->handle}” bundle type",
+        );
+
+        /** @var BundleTypeRecord|null $record */
+        $record = BundleTypeRecord::findOne(['uid' => $bundleType->uid]);
+
+        if ($record === null) {
+            throw new Exception("The “{$bundleType->handle}” bundle type wasn’t applied from Project Config.");
+        }
+
+        $bundleType->id = $record->id;
+        $bundleType->fieldLayoutId = $record->fieldLayoutId;
+
+        return true;
+    }
+
+    /**
+     * Applies a bundle type added or changed in Project Config to the database.
+     *
+     * A type whose UID is unknown here takes over an existing type with the
+     * same handle, so environments that each created the type by hand end up
+     * sharing one definition and keep their bundles.
+     *
+     * @param ConfigEvent $event The config event.
+     * @return void
+     * @throws Throwable if the field layout or records can't be saved.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function handleChangedBundleType(ConfigEvent $event): void
+    {
+        ProjectConfigHelper::ensureAllSitesProcessed();
+        ProjectConfigHelper::ensureAllFieldsProcessed();
+
+        $uid = $event->tokenMatches[0];
+        $data = $event->newValue;
         $transaction = Craft::$app->getDb()->beginTransaction();
 
         try {
-            $record = $isNew
-                ? new BundleTypeRecord()
-                : (BundleTypeRecord::findOne($bundleType->id) ?? new BundleTypeRecord());
+            $record = $this->_getBundleTypeRecord($uid, $data['handle']);
+            $isNew = $record->getIsNewRecord();
 
-            $record->name = $bundleType->name;
-            $record->handle = $bundleType->handle;
-            $record->skuFormat = $bundleType->skuFormat;
-            $record->descriptionFormat = $bundleType->descriptionFormat;
-            $record->showSlugField = $bundleType->showSlugField;
-            $record->enableVersioning = $bundleType->enableVersioning;
-            $record->componentSources = Json::encode($bundleType->componentSources);
-            $record->taxTreatment = $bundleType->taxTreatment;
-            $record->previewTargets = $bundleType->previewTargets ? Json::encode(array_values($bundleType->previewTargets)) : null;
+            $record->uid = $uid;
+            $record->name = $data['name'];
+            $record->handle = $data['handle'];
+            $record->skuFormat = $data['skuFormat'] ?? null;
+            $record->descriptionFormat = $data['descriptionFormat'] ?? null;
+            $record->showSlugField = $data['showSlugField'] ?? true;
+            $record->enableVersioning = $data['enableVersioning'] ?? false;
+            $record->componentSources = Json::encode($data['componentSources'] ?? '*');
+            $record->taxTreatment = $data['taxTreatment'] ?? TaxTreatment::Composite->value;
+            $record->previewTargets = empty($data['previewTargets'])
+                ? null
+                : Json::encode(array_values(ProjectConfigHelper::unpackAssociativeArray($data['previewTargets'])));
 
-            $fieldLayout = $bundleType->getBundleFieldLayout();
-            Craft::$app->getFields()->saveLayout($fieldLayout);
-            $bundleType->fieldLayoutId = $fieldLayout->id;
-            $record->fieldLayoutId = $fieldLayout->id;
+            $fieldsService = Craft::$app->getFields();
+            $fieldLayoutConfig = empty($data['fieldLayouts']) ? null : reset($data['fieldLayouts']);
+
+            if ($fieldLayoutConfig) {
+                $fieldLayout = FieldLayout::createFromConfig($fieldLayoutConfig);
+                $fieldLayout->id = $record->fieldLayoutId;
+                $fieldLayout->type = Bundle::class;
+                $fieldLayout->uid = key($data['fieldLayouts']);
+                $fieldsService->saveLayout($fieldLayout, false);
+                $record->fieldLayoutId = $fieldLayout->id;
+            } elseif ($record->fieldLayoutId) {
+                $fieldsService->deleteLayoutById($record->fieldLayoutId);
+                $record->fieldLayoutId = null;
+            }
 
             $record->save(false);
 
-            $bundleType->id = $record->id;
-            $bundleType->uid = $record->uid;
-
-            $this->_saveSiteSettings($bundleType);
+            $resaveBundles = $this->_applySiteSettings($record->id, $data['siteSettings'] ?? [], $isNew);
 
             $transaction->commit();
         } catch (Throwable $e) {
@@ -268,7 +346,33 @@ class BundleTypes extends Component
         // Cached GraphQL results carry the type's handle and custom fields
         Craft::$app->getGql()->invalidateCaches();
 
-        return true;
+        if ($resaveBundles) {
+            $this->resaveBundles($record->id);
+        }
+    }
+
+    /**
+     * Queues a resave of bundles across all their sites, which adds each bundle
+     * to the sites its type supports, removes it from the ones it doesn't, and
+     * refreshes its URIs.
+     *
+     * @param int|null $bundleTypeId The bundle type to resave, or null for every type.
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function resaveBundles(?int $bundleTypeId = null): void
+    {
+        $criteria = ['siteId' => '*', 'unique' => true, 'status' => null];
+
+        if ($bundleTypeId !== null) {
+            $criteria['typeId'] = $bundleTypeId;
+        }
+
+        Craft::$app->getQueue()->push(new ResaveElements([
+            'elementType' => Bundle::class,
+            'criteria' => $criteria,
+        ]));
     }
 
     /**
@@ -277,23 +381,52 @@ class BundleTypes extends Component
      *
      * @param int $id The bundle type ID.
      * @return bool Whether a bundle type was deleted.
-     * @throws Throwable if a bundle element can't be deleted.
+     * @throws NotSupportedException if Project Config is read-only.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
      */
     public function deleteBundleTypeById(int $id): bool
     {
+        /** @var BundleTypeRecord|null $record */
         $record = BundleTypeRecord::findOne($id);
 
-        if (!$record) {
+        if ($record === null) {
             return false;
+        }
+
+        Craft::$app->getProjectConfig()->remove(
+            self::CONFIG_BUNDLE_TYPES_KEY . '.' . $record->uid,
+            "Delete the “{$record->handle}” bundle type",
+        );
+
+        return true;
+    }
+
+    /**
+     * Deletes a bundle type removed from Project Config, with its bundles and
+     * field layout.
+     *
+     * @param ConfigEvent $event The config event.
+     * @return void
+     * @throws Throwable if a bundle element can't be deleted.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function handleDeletedBundleType(ConfigEvent $event): void
+    {
+        /** @var BundleTypeRecord|null $record */
+        $record = BundleTypeRecord::findOne(['uid' => $event->tokenMatches[0]]);
+
+        if ($record === null) {
+            return;
         }
 
         $transaction = Craft::$app->getDb()->beginTransaction();
 
         try {
-            $bundles = Bundle::find()->typeId($id)->status(null)->all();
+            $bundles = Bundle::find()->typeId($record->id)->site('*')->unique()->status(null)->all();
             $elementsService = Craft::$app->getElements();
+
             foreach ($bundles as $bundle) {
                 $elementsService->deleteElement($bundle);
             }
@@ -312,48 +445,152 @@ class BundleTypes extends Component
 
         $this->_bundleTypes = null;
         Craft::$app->getGql()->invalidateCaches();
+    }
 
-        return true;
+    /**
+     * Drops a deleted site from every bundle type's Project Config definition.
+     *
+     * @param DeleteSiteEvent $event The delete-site event.
+     * @return void
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function pruneDeletedSite(DeleteSiteEvent $event): void
+    {
+        $projectConfig = Craft::$app->getProjectConfig();
+        $bundleTypes = $projectConfig->get(self::CONFIG_BUNDLE_TYPES_KEY);
+
+        if (!is_array($bundleTypes)) {
+            return;
+        }
+
+        foreach (array_keys($bundleTypes) as $uid) {
+            $projectConfig->remove(self::CONFIG_BUNDLE_TYPES_KEY . '.' . $uid . '.siteSettings.' . $event->site->uid);
+        }
+    }
+
+    /**
+     * Adds every bundle type in the database to a Project Config rebuild.
+     *
+     * @param RebuildConfigEvent $event The rebuild event.
+     * @return void
+     * @throws InvalidConfigException if a field layout or site can't be resolved.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public function handleRebuildConfig(RebuildConfigEvent $event): void
+    {
+        $this->_bundleTypes = null;
+        $event->config['bundle-builder']['bundleTypes'] = [];
+
+        foreach ($this->getAllBundleTypes() as $bundleType) {
+            $event->config['bundle-builder']['bundleTypes'][$bundleType->uid] = $bundleType->getConfig();
+        }
     }
 
     // Private Methods
     // =========================================================================
 
     /**
-     * Persists the per-site settings for a bundle type, replacing any existing
-     * rows.
+     * Returns the record a Project Config definition applies to: the one with
+     * its UID, else an existing one with its handle, else a new one.
      *
-     * @param BundleType $bundleType The bundle type whose site settings to save.
-     * @return void
-     * @throws Exception if a referenced site can't be resolved.
+     * A record matched by handle is moved to the incoming UID along with the
+     * permission that names it.
+     *
+     * @param string $uid The bundle type UID from Project Config.
+     * @param string $handle The bundle type handle from Project Config.
+     * @return BundleTypeRecord The record.
      * @author John Henry Donovan <info@johnhenry.ie>
-     * @since 1.0.0
+     * @since 1.3.0
      */
-    private function _saveSiteSettings(BundleType $bundleType): void
+    private function _getBundleTypeRecord(string $uid, string $handle): BundleTypeRecord
     {
-        $allSiteSettings = $bundleType->getSiteSettings();
+        /** @var BundleTypeRecord|null $record */
+        $record = BundleTypeRecord::findOne(['uid' => $uid]);
 
-        if (empty($allSiteSettings)) {
-            foreach (Craft::$app->getSites()->getAllSites() as $site) {
-                $allSiteSettings[$site->id] = new BundleTypeSite([
-                    'siteId' => $site->id,
-                    'hasUrls' => false,
-                ]);
-            }
+        if ($record !== null) {
+            return $record;
         }
 
-        Db::delete('{{%bundlebuilder_bundletypes_sites}}', ['bundleTypeId' => $bundleType->id]);
+        /** @var BundleTypeRecord|null $record */
+        $record = BundleTypeRecord::findOne(['handle' => $handle]);
 
-        foreach ($allSiteSettings as $siteSettings) {
-            $record = new BundleTypeSiteRecord();
-            $record->bundleTypeId = $bundleType->id;
-            $record->siteId = $siteSettings->siteId;
-            $record->hasUrls = $siteSettings->hasUrls;
-            $record->uriFormat = $siteSettings->hasUrls ? $siteSettings->uriFormat : null;
-            $record->template = $siteSettings->hasUrls ? $siteSettings->template : null;
-            $record->enabledByDefault = $siteSettings->enabledByDefault;
+        if ($record === null) {
+            return new BundleTypeRecord();
+        }
+
+        // Craft stores permission names in lowercase. A permission that already
+        // exists under the incoming UID is left as it is.
+        $oldPermission = strtolower(BundlesController::PERMISSION_MANAGE_BUNDLES . ':' . $record->uid);
+        $newPermission = strtolower(BundlesController::PERMISSION_MANAGE_BUNDLES . ':' . $uid);
+
+        if (!(new Query())->from(Table::USERPERMISSIONS)->where(['name' => $newPermission])->exists()) {
+            Db::update(Table::USERPERMISSIONS, ['name' => $newPermission], ['name' => $oldPermission]);
+        }
+
+        return $record;
+    }
+
+    /**
+     * Replaces a bundle type's per-site settings with the ones from Project
+     * Config.
+     *
+     * @param int $bundleTypeId The bundle type ID.
+     * @param array<string, array<string, mixed>> $siteData The site settings, keyed by site UID.
+     * @param bool $isNew Whether the bundle type was just created.
+     * @return bool Whether the type's bundles need resaving: a site was added
+     * or removed, or a site's URI format changed.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    private function _applySiteSettings(int $bundleTypeId, array $siteData, bool $isNew): bool
+    {
+        /** @var array<int, BundleTypeSiteRecord> $oldRecords */
+        $oldRecords = $isNew ? [] : BundleTypeSiteRecord::find()
+            ->where(['bundleTypeId' => $bundleTypeId])
+            ->indexBy('siteId')
+            ->all();
+
+        $siteIdMap = Db::idsByUids(Table::SITES, array_keys($siteData));
+        $resaveBundles = false;
+
+        foreach ($siteData as $siteUid => $siteSettings) {
+            $siteId = $siteIdMap[$siteUid] ?? null;
+
+            if ($siteId === null) {
+                continue;
+            }
+
+            $record = $oldRecords[$siteId] ?? null;
+            unset($oldRecords[$siteId]);
+
+            if ($record === null) {
+                $record = new BundleTypeSiteRecord();
+                $record->bundleTypeId = $bundleTypeId;
+                $record->siteId = $siteId;
+                $resaveBundles = $resaveBundles || !$isNew;
+            }
+
+            $hasUrls = (bool)($siteSettings['hasUrls'] ?? false);
+            $record->hasUrls = $hasUrls;
+            $record->uriFormat = $hasUrls ? ($siteSettings['uriFormat'] ?? null) : null;
+            $record->template = $hasUrls ? ($siteSettings['template'] ?? null) : null;
+            $record->enabledByDefault = (bool)($siteSettings['enabledByDefault'] ?? true);
+
+            if (!$record->getIsNewRecord() && ($record->isAttributeChanged('hasUrls', false) || $record->isAttributeChanged('uriFormat', false))) {
+                $resaveBundles = true;
+            }
+
             $record->save(false);
         }
+
+        foreach ($oldRecords as $record) {
+            $record->delete();
+            $resaveBundles = true;
+        }
+
+        return $resaveBundles;
     }
 
     /**

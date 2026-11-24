@@ -10,7 +10,8 @@ Product bundles for Craft Commerce 5. Sell a hamper, a starter kit or a set of b
 ## Features
 
 - **Bundle elements** edited through Craft's native element editor (live preview, drafts, autosave, and revisions when versioning is on for the bundle type).
-- **Bundle types** with their own field layout, SKU/description formats, per-site URL settings, preview targets, and tax treatment.
+- **Bundle types** with their own field layout, SKU/description formats, per-site URL settings, preview targets, and tax treatment. They're stored in Project Config, so you set them up in development and deploy them.
+- **Multi-site**: a bundle is saved to every site its bundle type is enabled for.
 - **Pricing**
   - *Fixed*: a set price (plus optional promotional price).
   - *Automatic*: the summed price of the components (each component's own sale or catalog-pricing-rule price, when one applies), less a percentage or flat discount. Recalculated automatically when a component product's price changes.

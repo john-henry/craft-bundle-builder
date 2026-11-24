@@ -203,6 +203,21 @@ class Bundle extends Purchasable
     /**
      * @inheritdoc
      *
+     * Bundles are stored per site: a bundle exists in each site its type is
+     * enabled for, and queries return the requested site's bundles.
+     *
+     * @return bool Whether elements of this type store content per site.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.0
+     */
+    public static function isLocalized(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @inheritdoc
+     *
      * @return bool Whether elements of this type support drafts.
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -1303,7 +1318,7 @@ class Bundle extends Purchasable
      * @inheritdoc
      *
      * @param string|null $context The source context.
-     * @return list<array{key: string, label: string, data?: array{handle: string}, criteria: array<string, mixed>}> The source definitions.
+     * @return list<array{key: string, label: string, data?: array{handle: string}, criteria: array<string, mixed>, sites?: int[]}> The source definitions.
      * @throws InvalidConfigException|Throwable
      * @author John Henry Donovan <info@johnhenry.ie>
      * @since 1.0.0
@@ -1329,6 +1344,7 @@ class Bundle extends Purchasable
                 'label' => $bundleType->name,
                 'data' => ['handle' => $bundleType->handle],
                 'criteria' => ['typeId' => $bundleType->id],
+                'sites' => array_keys($bundleType->getSiteSettings()),
             ];
         }
 
@@ -1433,8 +1449,8 @@ class Bundle extends Purchasable
         }
 
         $bundleTypes = BundleBuilder::getInstance()->getBundleTypes();
-        $existing = $bundleTypes->getProductIdsInSources($productIds, '*');
-        $allowed = $bundleTypes->getProductIdsInSources($existing, $sources);
+        $existing = $bundleTypes->getProductIdsInSources($productIds, '*', $this->siteId);
+        $allowed = $bundleTypes->getProductIdsInSources($existing, $sources, $this->siteId);
 
         foreach ($this->getProducts() as $bundleProduct) {
             if (in_array($bundleProduct->productId, $existing, true) && !in_array($bundleProduct->productId, $allowed, true)) {

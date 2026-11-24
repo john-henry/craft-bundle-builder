@@ -3,28 +3,109 @@
 {% set title = 'Bundles'|t('bundle-builder') %}
 {% set elementType = 'johnhenry\\bundlebuilder\\elements\\Bundle' %}
 
+{% set newBundleTypes = bundleTypes|map(bundleType => {
+    id: bundleType.id,
+    handle: bundleType.handle,
+    siteIds: bundleType.getSiteSettings()|keys,
+})|values %}
+
 {% block actionButton %}
-    {% if bundleTypes|length == 1 %}
-        <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
-            {{ 'New bundle'|t('bundle-builder') }}
-        </a>
-    {% elseif bundleTypes|length > 1 %}
-        <div class="btngroup submit">
-            <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon">
+    {% if bundleTypes|length %}
+        <div id="new-bundle" class="btngroup submit">
+            <a href="{{ url('bundle-builder/bundles/new', { typeId: (bundleTypes|first).id }) }}" class="btn submit add icon" data-new-bundle>
                 {{ 'New bundle'|t('bundle-builder') }}
             </a>
-            <div class="btn submit menubtn"></div>
-            <div class="menu">
-                <ul>
-                    {% for bundleType in bundleTypes %}
-                        <li>
-                            <a href="{{ url('bundle-builder/bundles/new', { typeId: bundleType.id }) }}">
-                                {{ bundleType.name }}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
+            {% if bundleTypes|length > 1 %}
+                <button type="button" class="btn submit menubtn" aria-label="{{ 'Choose a bundle type'|t('bundle-builder') }}" aria-controls="new-bundle-menu" data-disclosure-trigger data-new-bundle-menu></button>
+                <div id="new-bundle-menu" class="menu menu--disclosure" data-disclosure-menu>
+                    <ul>
+                        {% for bundleType in bundleTypes %}
+                            <li>
+                                <a class="menu-item" href="{{ url('bundle-builder/bundles/new', { typeId: bundleType.id }) }}" data-new-bundle-type="{{ bundleType.id }}">
+                                    {{ bundleType.name }}
+                                </a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
         </div>
+    {% elseif currentUser.admin and craft.app.config.general.allowAdminChanges %}
+        <a href="{{ url('bundle-builder/bundle-types/new') }}" class="btn submit add icon">
+            {{ 'New bundle type'|t('bundle-builder') }}
+        </a>
     {% endif %}
+{% endblock %}
+
+{% block initJs %}
+    {{ parent() }}
+
+    // Offers only the bundle types enabled for the site the index is showing,
+    // and creates the new bundle in that site. The menu is looked up in the
+    // whole document: Craft moves it out of the button group.
+    (function() {
+        'use strict';
+
+        var group = document.getElementById('new-bundle');
+
+        if (!group) {
+            return;
+        }
+
+        var bundleTypes = {{ newBundleTypes|json_encode|raw }};
+        var primary = group.querySelector('[data-new-bundle]');
+        var menuBtn = group.querySelector('[data-new-bundle-menu]');
+
+        var update = function() {
+            var siteId = Number(Craft.elementIndex.siteId);
+            var site = Craft.sites.find(function(candidate) {
+                return candidate.id === siteId;
+            });
+            var sourceHandle = Craft.elementIndex.$source ? Craft.elementIndex.$source.data('handle') : null;
+            var selected = null;
+            var available = 0;
+
+            bundleTypes.forEach(function(bundleType) {
+                var enabled = bundleType.siteIds.indexOf(siteId) !== -1;
+                var params = {typeId: bundleType.id};
+
+                if (site) {
+                    params.site = site.handle;
+                }
+
+                bundleType.url = Craft.getCpUrl('bundle-builder/bundles/new', params);
+
+                var link = document.querySelector('[data-new-bundle-type="' + bundleType.id + '"]');
+
+                if (link) {
+                    link.href = bundleType.url;
+                    link.closest('li').classList.toggle('hidden', !enabled);
+                }
+
+                if (!enabled) {
+                    return;
+                }
+
+                available++;
+
+                if (selected === null || bundleType.handle === sourceHandle) {
+                    selected = bundleType;
+                }
+            });
+
+            group.classList.toggle('hidden', selected === null);
+
+            if (selected !== null) {
+                primary.href = selected.url;
+            }
+
+            if (menuBtn) {
+                menuBtn.classList.toggle('hidden', available < 2);
+            }
+        };
+
+        Craft.elementIndex.on('selectSite', update);
+        Craft.elementIndex.on('selectSource', update);
+        update();
+    })();
 {% endblock %}

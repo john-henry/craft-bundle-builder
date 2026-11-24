@@ -17,10 +17,10 @@ use yii\base\InvalidConfigException;
 /**
  * Moves bundles off the zero-rate apportioned tax category.
  *
- * Multiple-supply bundles used to save that category as their own, so a type
- * switched back to composite left its bundles untaxed. The category now goes
- * on the line item only. Bundles have no tax category field of their own, so
- * the store default is what they'd otherwise have.
+ * The apportioned category belongs on a multiple-supply bundle's line item
+ * only: a bundle holding it as its own category stays untaxed when its type
+ * is set to composite. Bundles have no tax category field of their own, so
+ * the store default is the only other category they can have.
  *
  * @author John Henry Donovan <info@johnhenry.ie>
  * @since 1.2.0
