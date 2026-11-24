@@ -286,6 +286,7 @@ class BundlePricing extends Component
     {
         // Revisions keep their own component rows; only live bundles count.
         $bundleIds = BundleProductRecord::find()
+            ->alias('bundlebuilder_products')
             ->select(['bundlebuilder_products.bundleId'])
             ->innerJoin(['elements' => Table::ELEMENTS], '[[elements.id]] = [[bundlebuilder_products.bundleId]]')
             ->where(['bundlebuilder_products.productId' => $productId, 'elements.revisionId' => null])
