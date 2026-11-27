@@ -2,7 +2,7 @@
   "name": "johnhenry/craft-bundle-builder",
   "description": "Product bundles for Craft Commerce: one cart line at one price, with the customer choosing each part's variant and stock taken off each part.",
   "type": "craft-plugin",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "keywords": [
     "craft-commerce",
     "product bundles",
@@ -38,6 +38,7 @@
     "verbb/navigation": "^3.0 || ^4.0"
   },
   "suggest": {
+    "johnhenry/craft-container-deposits": "Charges container deposits on the cans and bottles chosen for a bundle (1.1.0 or later).",
     "verbb/hyper": "Adds a Bundle link type to Hyper link fields, so links can point at a bundle.",
     "verbb/navigation": "Lets bundles be added as nodes in Navigation menus out of the box."
   },
