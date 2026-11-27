@@ -1,5 +1,10 @@
 # Release Notes for Bundle Builder
 
+## 1.3.1 - 2026-11-27
+
+### Fixed
+- Passing `type` or `taxCategory` in the criteria for `craft.bundleBuilder.bundles()` or `getBundlesForProduct()` no longer throws an error.
+
 ## 1.3.0 - 2026-11-24
 
 > [!IMPORTANT]

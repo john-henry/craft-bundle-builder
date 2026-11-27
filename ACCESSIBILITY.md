@@ -4,11 +4,12 @@ Bundle Builder is a plugin for Craft CMS 5. This statement sets out how accessib
 
 ## What this covers
 
-This statement covers Bundle Builder 1.3.0:
+This statement covers Bundle Builder 1.3.0, and 1.3.1, which changes none of these screens:
 
 - the bundles index, where it adds the New bundle button and its menu of bundle types
 - the bundle types screens, including the read-only view shown when admin changes are off
-- the bundle editor on the product page, including the Bundles field
+- the bundle edit screen, including its Pricing and Components fields
+- the Bundles relation field, on the edit screens of the elements it's added to
 - the "Change bundle variants" dialog on the order edit page
 
 It doesn't cover:
@@ -18,7 +19,7 @@ It doesn't cover:
 
 ## The standard I'm working to
 
-WCAG 2.2 level AA. Bundle Builder adds to the Craft control panel, which is an authoring tool, so I also follow ATAG 2.0 Part A where it applies to the parts Bundle Builder adds. Craft itself works to the same standards and publishes its own reports at https://craftcms.com/accessibility, but those reports don't cover plugins.
+WCAG 2.2 level AA. Bundle Builder adds to the Craft control panel, which is an authoring tool, so I also follow ATAG 2.0 Part A where it applies to the screens Bundle Builder adds. Craft itself works to the same standards and publishes its own reports at https://craftcms.com/accessibility, but those reports don't cover plugins.
 
 ## How far it meets it
 

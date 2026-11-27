@@ -10,7 +10,9 @@ use craft\commerce\elements\db\PurchasableQuery;
 use craft\helpers\Db;
 use johnhenry\bundlebuilder\BundleBuilder;
 use johnhenry\bundlebuilder\elements\Bundle;
+use yii\base\InvalidCallException;
 use yii\base\NotSupportedException;
+use yii\base\UnknownPropertyException;
 
 /**
  * Bundle element query.
@@ -49,6 +51,25 @@ class BundleQuery extends PurchasableQuery
 
     // Public Methods
     // =========================================================================
+
+    /**
+     * Routes criteria keys that only exist as param methods to those methods, so
+     * they work in `Craft::configure()` and Twig criteria arrays.
+     *
+     * @inheritdoc
+     * @throws UnknownPropertyException if the property is not defined.
+     * @throws InvalidCallException if the property is read-only.
+     * @author John Henry Donovan <info@johnhenry.ie>
+     * @since 1.3.1
+     */
+    public function __set($name, $value)
+    {
+        match ($name) {
+            'type' => $this->type($value),
+            'taxCategory' => $this->taxCategory($value),
+            default => parent::__set($name, $value),
+        };
+    }
 
     /**
      * Narrows the query results to bundles of the given type ID(s).
